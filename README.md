@@ -9,7 +9,7 @@ This is the project directory for CS130 project.
 ### File structure for now:
 If you create new files or change directory structures, please run the 'tree' command in yoru terminal and update this section so everyone knows the new strucutre. 
 
-
+```bash
 .
 ├── backend
 │   ├── adapters
@@ -109,4 +109,5 @@ If you create new files or change directory structures, please run the 'tree' co
 ├── Project_Guideline__Idea,_Design_Doc,_Presentation.docx.pdf
 └── README.md
 
+```
 27 directories, 71 files
