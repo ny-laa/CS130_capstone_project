@@ -111,3 +111,17 @@ If you create new files or change directory structures, please run the 'tree' co
 
 ```
 27 directories, 71 files
+
+
+
+
+### How to run tests
+
+We are currently using a pytest directory under /test. run
+
+```bash
+pytest tests -v
+
+```
+
+to run all tests in the directory. Pelase create different tests under organized layout similar to the actual directory to keep it easy to maintain. 

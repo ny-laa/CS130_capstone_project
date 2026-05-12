@@ -1,0 +1,33 @@
+# core api
+fastapi
+uvicorn
+
+# database
+sqlalchemy
+alembic
+psycopg2-binary
+
+# llm
+anthropic
+
+# twilio (sms + calls)
+twilio
+
+# background tasks
+celery
+redis
+
+# google oauth / calendar / gmail
+google-auth
+google-auth-oauthlib
+google-api-python-client
+
+# speech (deepgram)
+deepgram-sdk
+
+# utils
+python-dotenv
+pydantic
+
+# testing
+pytest
