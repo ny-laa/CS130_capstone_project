@@ -168,4 +168,4 @@ pytest tests -v
 
 ```
 
-to run all tests in the directory. Pelase create different tests under organized layout similar to the actual directory to keep it easy to maintain. 
+to run all tests in the directory. Please create different tests under organized layout similar to the actual directory to keep it easy to maintain.

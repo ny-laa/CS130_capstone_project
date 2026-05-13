@@ -64,8 +64,8 @@ class ClaudeAdapter(BaseLLMAdapter):
         try:
             return json.loads(raw)
         except json.JSONDecodeError:
-            # fallback if claude doesnt return valid json for some reason
-            # shouldnt happen often but just in case
+            # fallback if claude doesn't return valid json for some reason
+            # shouldn't happen often but just in case
             return {
                 "task_type": "information_request",
                 "description": raw,
