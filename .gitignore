@@ -1,13 +1,30 @@
-# Python
-.venv/
+# python
 __pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# env
+.env
+.env.*
+*.env
+
+# venv
+venv/
+env/
+.venv/
+
+# pytest
+.pytest_cache/
 *.pyc
 
-# Secrets
-.env
-
-# Node (frontend)
+# node
 node_modules/
 
-# macOS
+# ide
+.vscode/
+.idea/
+
+# os
 .DS_Store
