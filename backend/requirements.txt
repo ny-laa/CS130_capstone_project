@@ -27,6 +27,7 @@ deepgram-sdk
 
 # utils
 python-dotenv
+python-multipart
 pydantic
 
 # testing

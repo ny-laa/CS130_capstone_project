@@ -19,6 +19,9 @@ env/
 .pytest_cache/
 *.pyc
 
+# node
+node_modules/
+
 # ide
 .vscode/
 .idea/

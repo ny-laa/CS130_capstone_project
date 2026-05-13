@@ -1,6 +1,6 @@
 # tests the orchestrator with a simple reminder query
-# just checks that we get back a resonable structured response
-# doesnt need a real api key bc we mock the claude client
+# just checks that we get back a reasonable structured response
+# doesn't need a real api key bc we mock the claude client
 
 import pytest
 from unittest.mock import MagicMock, patch
