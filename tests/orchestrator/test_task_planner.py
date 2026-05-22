@@ -21,8 +21,15 @@ def test_extract_intent_returns_reminder():
     
 
 def test_system_prompt_for_reminder_mentions_sms_tool():
+    """ we shoudl probably not test hardcoded properties in the future. for now, we will asusme llm returns perfect json as requsted. in the future if we change the prompt we should change this test"""
     mock_llm = MagicMock()
     planner = TaskPlanner(mock_llm)
     prompt = planner._system_prompt_for(TaskType.REMINDER) # need this attribute to contaiin following
     assert "sms_tool" in prompt
     assert "plan_steps" in prompt
+
+
+def test_create_task_plan_returns_structured_plan():
+
+
+

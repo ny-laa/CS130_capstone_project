@@ -1,57 +1,85 @@
 # takes the raw llm output and converts it into ordered plan_steps
 # each step is like {tool, params, status} that the worker can execute
-from backend.models.datatypes import TaskType, TaskStatus
+from backend.models.datatypes import TaskType, TaskStatus, Tools
 from enum import Enum
 import json
 from datetime import datetime, timezone # UTC time stamp
 from typing import Any
 from uuid import UUID
 
+class PlanStep:
+    def __init__(self, tool: Tools | None, params: list, status: TaskStatus):
+        self.tool = tool
+        self.params= params
+        self.status= status
 
+class StructuredTaskPlan:
+    def __init__(self, task_type: TaskType, description: str, plan_steps: list[PlanStep], response_message: str):
+        self.step_counter =0 
+        self.task_type = task_type
+        self.description = description
+        self.plan_steps = plan_steps 
+        self.response_message = response_message
     
+    def set_response_message(self , new_msg: str):
+        self.response_message = new_msg
+    
+    def current_step(self):
+        if self.plan_steps and self.step_counter< len(self.plan_steps):
+            return self.plan_steps[self.step_counter]
+        else: 
+            return None # done or doens' thage steps
+            
+        
+class Task:
+    def __init__(self, id: UUID, user_id: UUID, status: TaskStatus, type: TaskType, description: str, plan_steps: list[PlanStep], escalation_deadline: datetime| None, created_at:datetime, updated_at: datetime) -> None:
+        """
+        Note: instead of json, I used a list for plan steps since it now makes mor esense to use taht. 
+        """
+        self.step_counter=0
+        self.id = id
+        self.user_id = user_id
+        self.status = status
+        self.task_plan= StructuredTaskPlan(type, description, plan_steps, "")
+        self.escalation_deadline = escalation_deadline
+        self.created_at = created_at
+        self.updated_at = updated_at
+    
+    def mark_complete(self):
+        self.status = TaskStatus.COMPLETED
+
+    def return_status(self):
+        return self.status
+    
+    def current_step(self):
+        return self.task_plan.current_step()
 class TaskPlanner:
     def __init__(self, llm_adapter):
         self.llm_adapter = llm_adapter
 
-
-    class StructuredTaskPlan:
-        def __init__(self, task_type: TaskType, description: str, plan_steps: list, response_message: str):
-            self.task_type = task_type
-            self.description = description
-            self.plan_steps = plan_steps
-            self.response_message = response_message
-
-    class task:
-        
-
-        def __init__(self, id: UUID, user_id: UUID, status: TaskStatus, type: str, description: str, plan_steps: list[dict[str, Any]], escalation_deadline: datetime| None, created_at:datetime, updated_at: datetime) -> None:
-            """
-            Note: instead of json, I used a list for plan steps since it now makes mor esense to use taht. 
-            """
-            self.id = id
-            self.user_id = user_id
-            self.status = status
-            self.type = type
-            self.description = description
-            self.plan_steps=plan_steps
-            self.escalation_deadline = escalation_deadline
-            self.created_at = created_at
-            self.updated_at = updated_at
-        
-        def change_status(self, new_stat:TaskStatus):
-            # TODO: no guard unsafe should change
-            self.status = new_stat
-
-
-
-            
+    
             
 
-    def create_task_plan(self, query: str, context: dict = None, intent: str = None) -> list:
+
+    def create_task_plan(self, query: str, context: dict = None, intent: str = None) -> StructuredTaskPlan:
         # call the llm adapter to get the raw plan
         # depending on the intent type, we might want to create different half manuallly constructed pipelines along with different system prompts to guide the llm to output the right format for each intent
         # for example, if intent is calendar_update, we might want to have a system prompt that specifically tells the llm to output a plan that involves calendar_tool, and we might want to pre-fill some of the params for the calendar_tool based on the context
         # also, the return format would depend on the intent.
+        raw = self.llm_adapter.handle(query,context)
+        steps = [
+            PlanStep(tool=s["tool"], params=s["params"], status=TaskStatus.PENDING) for s in raw.get("plan_steps", [])
+        ] # extract the steps 
+        return StructuredTaskPlan(
+            task_type=TaskType(raw["task_type"]),
+            description=raw["description"],
+            plan_steps=steps,
+            response_message = raw["response_message"],
+        )
+
+
+
+
         return None
 
         

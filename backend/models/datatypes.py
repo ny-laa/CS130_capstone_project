@@ -11,6 +11,11 @@ from uuid import UUID, uuid4
 
 # enums for various fields in the data model, helps keep things consistent and avoid typos
 
+
+class Tools(str, Enum):
+    SMS_TOOL  = "sms_tool"
+    CALLTOOL = "call_tool"
+    # add more as we write. 
 class CommStyle(str, Enum):
     BRIEF    = "brief"
     DETAILED = "detailed"
