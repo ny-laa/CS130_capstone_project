@@ -13,6 +13,10 @@ class PlanStep:
         self.params= params
         self.status= status
 
+    def __repr__(self):
+        # print better when debugging with PlanStep objects
+        return f"PlanStep(tool={self.tool}, status={self.status})"
+
 class StructuredTaskPlan:
     def __init__(self, task_type: TaskType, description: str, plan_steps: list[PlanStep], response_message: str):
         self.step_counter =0 
@@ -36,7 +40,8 @@ class Task:
         """
         Note: instead of json, I used a list for plan steps since it now makes mor esense to use taht. 
         """
-        self.step_counter=0
+        self.step_counter=0 # incremented by task_runner as steps complete
+
         self.id = id
         self.user_id = user_id
         self.status = status
@@ -53,14 +58,14 @@ class Task:
     
     def current_step(self):
         return self.task_plan.current_step()
+    
+    
 class TaskPlanner:
     def __init__(self, llm_adapter):
         self.llm_adapter = llm_adapter
 
     
             
-
-
     def create_task_plan(self, query: str, context: dict = None, intent: str = None) -> StructuredTaskPlan:
         # call the llm adapter to get the raw plan
         # depending on the intent type, we might want to create different half manuallly constructed pipelines along with different system prompts to guide the llm to output the right format for each intent
@@ -78,10 +83,6 @@ class TaskPlanner:
         )
 
 
-
-
-        return None
-
         
         
     
@@ -89,7 +90,12 @@ class TaskPlanner:
         """optional helper function to extract the user's intent from the raw text, using the llm adapter. this can be used for routing or other purposes."""
 
         # given a raw user input, first extract intent, then send to llm to get a plan based on that intent.
-        query = f"Given the user input: '{rawText}' and the user context: '{userContext}', classify the intent. Return ONLY JSON: {"intent", "<value>"} where the value is one of: reminder, calendar_update, information_request, morning_digest."
+        query = (f"Given the user input: '{rawText}' and the user context: '{userContext}',"
+                'classify the intent. Return ONLY JSON: {"intent": "<value>"} '
+                "where the value is one of: reminder, calendar_update, information_request, morning_digest.")
+        # needed to split it for the JSON string 
+            
+            
         intent_response = self.llm_adapter.handle(query)
         intent = intent_response.get("intent")
 
@@ -126,6 +132,6 @@ class TaskPlanner:
         else:
             # TODO: for other task types haven't wrote the task description yet need to make up later. 
             return "Not implemented task type."
-# TODO: since I don't think we could assume what llm we are using yet, I can't call specific structural output functions. THis is usually quite effective from previous experience. However, WE SHOULD ADD EXCEPTION HANDLING such as resending query until the shape looks right. 
+    # TODO: since I don't think we could assume what llm we are using yet, I can't call specific structural output functions. THis is usually quite effective from previous experience. However, WE SHOULD ADD EXCEPTION HANDLING such as resending query until the shape looks right. 
 
 

@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 class BaseLLMAdapter(ABC):
 
     @abstractmethod
-    def handle(self, query: str, context: dict = None) -> dict:
+    def handle(self, query: str, system_prompt=None, context: dict = None) -> dict:
         # subclasses gotta override this
         # query = the raw text from the user
         # context = optional extra stuff like calendar events or whatever

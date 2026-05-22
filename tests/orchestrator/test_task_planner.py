@@ -1,6 +1,11 @@
 from unittest.mock import MagicMock
 from backend.orchestrator.task_planner import TaskPlanner
 from backend.models.datatypes import TaskType
+import os 
+
+# for Claude live testing
+from dotenv import load_dotenv
+load_dotenv("backend/.env")
 
 """
 all the tests for task planner nwo
@@ -29,7 +34,41 @@ def test_system_prompt_for_reminder_mentions_sms_tool():
     assert "plan_steps" in prompt
 
 
-def test_create_task_plan_returns_structured_plan():
+def test_create_task_plan_returns_given_plan():
+    """if we are given a correct plan, w should return its results correctly"""
+
+    mock_llm = MagicMock()
+    mock_llm.handle.return_value = {
+        "task_type": "reminder",
+        "description": "Call Lucy at 3pm",
+        "plan_steps": [
+            {"tool": "sms_tool", "params": {"message":"Call Lucy"}, "status": "PENDING"}],"response_message": "Got it, I'll remind you at 3pm.",
+    }
+    planner = TaskPlanner(mock_llm)
+    plan = planner.create_task_plan("Remind me to call Lucy at 3pm", intent="reminder")
+
+    assert plan.task_type == TaskType.REMINDER
+    assert len(plan.plan_steps) == 1
+    assert plan.plan_steps[0].tool == "sms_tool"
+    assert plan.response_message == "Got it, I'll remind you at 3pm."
+
+def test_live_create_task_plan():
+    assert os.getenv("ANTHROPIC_API_KEY")
+    from backend.adapters.llm.claude_adapter import ClaudeAdapter
+    planner = TaskPlanner(ClaudeAdapter())
+
+    plan = planner.create_task_plan("Remind me to call Lucy at 3pm", intent="reminder")
+
+    print("plan output check:")
+    print(plan.task_type, plan.plan_steps,plan.response_message)
+    assert plan.task_type == TaskType.REMINDER
+    assert len(plan.plan_steps)>0
+
+
+
+
+
+
 
 
 
