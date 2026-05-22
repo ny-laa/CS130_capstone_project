@@ -11,21 +11,21 @@ from .base_llm_adapter import BaseLLMAdapter
 
 # system prompt that tells claude who it is and what format to respond in
 # keep this in sync with the task schema in models/task.py
-SYSTEM_PROMPT = """You are G, an AI personal secretary that helps parents manage their day.
-When given a request, figure out what the parent needs and respond with a JSON object only — no extra text.
+# SYSTEM_PROMPT = """You are G, an AI personal secretary that helps parents manage their day.
+# When given a request, figure out what the parent needs and respond with a JSON object only — no extra text.
 
-Use this exact format:
-{
-    "task_type": "<one of: reminder, calendar_update, information_request, morning_digest>",
-    "description": "<short summary of what the parent is asking for>",
-    "plan_steps": [
-        {"tool": "<tool name>", "params": {}, "status": "PENDING"}
-    ],
-    "response_message": "<friendly confirmation to send back to the parent via sms>"
-}
+# Use this exact format:
+# {
+#     "task_type": "<one of: reminder, calendar_update, information_request, morning_digest>",
+#     "description": "<short summary of what the parent is asking for>",
+#     "plan_steps": [
+#         {"tool": "<tool name>", "params": {}, "status": "PENDING"}
+#     ],
+#     "response_message": "<friendly confirmation to send back to the parent via sms>"
+# }
 
-Tools you can use: sms_tool, calendar_tool, gmail_tool, call_tool
-Only respond with the JSON, nothing else."""
+# Tools you can use: sms_tool, calendar_tool, gmail_tool, call_tool
+# Only respond with the JSON, nothing else."""
 
 
 class ClaudeAdapter(BaseLLMAdapter):
@@ -48,7 +48,7 @@ class ClaudeAdapter(BaseLLMAdapter):
         response = self.client.messages.create(
             model=self.model,
             max_tokens=1024,
-            system=SYSTEM_PROMPT,
+            system=system_prompt or "",
             messages=[{"role": "user", "content": user_message}]
         )
 

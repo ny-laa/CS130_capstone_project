@@ -57,7 +57,7 @@ def test_live_create_task_plan():
     from backend.adapters.llm.claude_adapter import ClaudeAdapter
     planner = TaskPlanner(ClaudeAdapter())
 
-    plan = planner.create_task_plan("Remind me to call Lucy at 3pm", intent="reminder")
+    plan = planner.create_task_plan("Remind me to call Max at 1pm to have a beer with him", intent="reminder")
 
     print("plan output check:")
     print(plan.task_type, plan.plan_steps,plan.response_message)

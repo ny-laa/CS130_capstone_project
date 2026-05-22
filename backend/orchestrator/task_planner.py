@@ -71,7 +71,10 @@ class TaskPlanner:
         # depending on the intent type, we might want to create different half manuallly constructed pipelines along with different system prompts to guide the llm to output the right format for each intent
         # for example, if intent is calendar_update, we might want to have a system prompt that specifically tells the llm to output a plan that involves calendar_tool, and we might want to pre-fill some of the params for the calendar_tool based on the context
         # also, the return format would depend on the intent.
-        raw = self.llm_adapter.handle(query,context)
+
+        
+        system_prompt = self._system_prompt_for(TaskType(intent) if intent else TaskType.INFORMATION_REQUEST)
+        raw = self.llm_adapter.handle(query,system_prompt,context) # Pass in our actual system prompt!!
         steps = [
             PlanStep(tool=s["tool"], params=s["params"], status=TaskStatus.PENDING) for s in raw.get("plan_steps", [])
         ] # extract the steps 
