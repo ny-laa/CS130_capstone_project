@@ -1,6 +1,6 @@
 # abstract interface for llm adapters
-# basically just forces everyone to implement handle() so the orcehstrator
-# doesnt care if its claude or gpt or whatever
+# basically just forces everyone to implement handle() so the orchestrator
+# doesn't care if it's claude or gpt or whatever
 
 from abc import ABC, abstractmethod
 
