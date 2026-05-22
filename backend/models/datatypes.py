@@ -5,8 +5,7 @@
 
 from enum import Enum
 from typing import Optional, Any
-from dataclasses import dataclass
-from uuid import UUID, uuid4
+from uuid import UUID
 
 
 # enums for various fields in the data model, helps keep things consistent and avoid typos
