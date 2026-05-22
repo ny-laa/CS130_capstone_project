@@ -19,3 +19,10 @@ def test_extract_intent_returns_reminder():
     result = planner.extract_intent("Remind me to call Lucy at 3 pm", "no conext")
     assert result == TaskType.REMINDER
     
+
+def test_system_prompt_for_reminder_mentions_sms_tool():
+    mock_llm = MagicMock()
+    planner = TaskPlanner(mock_llm)
+    prompt = planner._system_prompt_for(TaskType.REMINDER) # need this attribute to contaiin following
+    assert "sms_tool" in prompt
+    assert "plan_steps" in prompt
