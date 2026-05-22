@@ -61,9 +61,9 @@ class TaskPlanner:
         """optional helper function to extract the user's intent from the raw text, using the llm adapter. this can be used for routing or other purposes."""
 
         # given a raw user input, first extract intent, then send to llm to get a plan based on that intent.
-        query = f"Given the user input: '{rawText}' and the user context: '{userContext}', what is the user's intent? Respond with one of: reminder, calendar_update, information_request, morning_digest."
+        query = f"Given the user input: '{rawText}' and the user context: '{userContext}', what is the user's intent? Respond with one and only one of: reminder, calendar_update, information_request, morning_digest."
         intent_response = self.llm_adapter.handle(query)
         intent = intent_response.get("intent")
 
+        return TaskType(intent) # directly return the intent
 
-        return self.create_task_plan(query=rawText, context={"user_context": userContext}, intent=intent)
