@@ -1,6 +1,6 @@
 # takes the raw llm output and converts it into ordered plan_steps
 # each step is like {tool, params, status} that the worker can execute
-from backend.models.datatypes import TaskType
+from backend.models.datatypes import TaskType, TaskStatus
 from enum import Enum
 import json
 from datetime import datetime, timezone # UTC time stamp
@@ -8,12 +8,6 @@ from typing import Any
 from uuid import UUID
 
 
-class Status(Enum):
-    PENDING= 1
-    IN_PROGRESS=2
-    ESCALATION_PENDING=3
-    COMPLETED=4
-    FAILED=5
     
 class TaskPlanner:
     def __init__(self, llm_adapter):
@@ -30,7 +24,7 @@ class TaskPlanner:
     class task:
         
 
-        def __init__(self, id: UUID, user_id: UUID, status: Status, type: str, description: str, plan_steps: list[dict[str, Any]], escalation_deadline: datetime| None, created_at:datetime, updated_at: datetime) -> None:
+        def __init__(self, id: UUID, user_id: UUID, status: TaskStatus, type: str, description: str, plan_steps: list[dict[str, Any]], escalation_deadline: datetime| None, created_at:datetime, updated_at: datetime) -> None:
             """
             Note: instead of json, I used a list for plan steps since it now makes mor esense to use taht. 
             """
@@ -58,13 +52,12 @@ class TaskPlanner:
         # depending on the intent type, we might want to create different half manuallly constructed pipelines along with different system prompts to guide the llm to output the right format for each intent
         # for example, if intent is calendar_update, we might want to have a system prompt that specifically tells the llm to output a plan that involves calendar_tool, and we might want to pre-fill some of the params for the calendar_tool based on the context
         # also, the return format would depend on the intent.
-
-
+        return None
 
         
         
     
-    def extract_intent(self, awText: str, userContext: str):
+    def extract_intent(self, rawText: str, userContext: str):
         """optional helper function to extract the user's intent from the raw text, using the llm adapter. this can be used for routing or other purposes."""
 
         # given a raw user input, first extract intent, then send to llm to get a plan based on that intent.
@@ -73,4 +66,4 @@ class TaskPlanner:
         intent = intent_response.get("intent")
 
 
-        return create_task_plan(query=rawText, context={"user_context": userContext}, intent=intent)
+        return self.create_task_plan(query=rawText, context={"user_context": userContext}, intent=intent)
