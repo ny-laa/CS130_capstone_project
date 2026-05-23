@@ -3,8 +3,8 @@
 # also handles escalation when G needs human approval before doing something
 
 from backend.adapters.llm.claude_adapter import ClaudeAdapter
-
-
+from backend.models.datatypes import TaskType
+from uuid import UUID, uuid4
 class GOrchestrator:
 
     def __init__(self, llm_adapter=None):
@@ -26,3 +26,14 @@ class GOrchestrator:
             "status": "PENDING",
             **plan  # spreads task_type, description, plan_steps, response_message
         }
+    
+
+    def handle_incoming_message(self, userID: UUID, rawText: str) -> None:
+        # TODO: this is for two-way conversations, where G might ask follow-up questions and the parent can reply
+        pass  # will implement this later once we have some basic tasks working
+
+    def resume_task_from_reply(self, userID: UUID, taskID: UUID, replyText: str) -> None:
+        # TODO: this is for when G needs to ask the parent a question in the middle of executing a task, e.g. "which event do you want to move?" and then the parent replies with the answer
+        pass  # will implement this later once we have some basic tasks working
+
+

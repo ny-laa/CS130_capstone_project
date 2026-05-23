@@ -32,3 +32,6 @@ pydantic
 
 # testing
 pytest
+
+
+dotenv

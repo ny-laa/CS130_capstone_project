@@ -45,9 +45,19 @@ In the Twilio Console → Phone Numbers → your number:
 
 Save both.
 
-### 5. Test
+### 5. Test Voice
 
 - **Voice**: call your Twilio number — you should hear "Hi, this is G. What can I help you with?", and after you speak, hear your speech repeated back before it hangs up.
+
+### Testing:
+We use pytest for testing. you can add your test under the /tests folder. 
+I recommend you mirror the actual structure of the whole project directory. To run tests, you can use the following commend on specific test targeting one module:
+
+```bash
+python -m pytest tests/orchestrator/test_task_planner.py -v -s
+```
+
+Note: -v is for verbose which shows test names and pass/fail. -s is for no-capture, helps print anythign in stdout that would otherwise not be printed by pytest.
 
 
 ### File structure for now:
@@ -155,9 +165,6 @@ If you create new files or change directory structures, please run the 'tree' co
 
 ```
 27 directories, 71 files
-
-
-
 
 ### How to run tests
 
