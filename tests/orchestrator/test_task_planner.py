@@ -2,6 +2,10 @@ from unittest.mock import MagicMock
 from backend.orchestrator.task_planner import TaskPlanner
 from backend.models.datatypes import TaskType
 import os 
+from backend.adapters.llm.claude_adapter import ClaudeAdapter
+
+import pytest
+
 
 # for Claude live testing
 from dotenv import load_dotenv
@@ -54,7 +58,7 @@ def test_create_task_plan_returns_given_plan():
 
 def test_live_create_task_plan():
     assert os.getenv("ANTHROPIC_API_KEY")
-    from backend.adapters.llm.claude_adapter import ClaudeAdapter
+    
     planner = TaskPlanner(ClaudeAdapter())
 
     plan = planner.create_task_plan("Remind me to call Max at 1pm to have a beer with him", intent="reminder")
@@ -63,6 +67,23 @@ def test_live_create_task_plan():
     print(plan.task_type, plan.plan_steps,plan.response_message)
     assert plan.task_type == TaskType.REMINDER
     assert len(plan.plan_steps)>0
+
+
+
+def test_live_extract_intent_reminder():
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        pytest.skip("no key") # need key to run test correctly
+    planner = TaskPlanner(ClaudeAdapter())
+    result = planner.extract_intent("Remind me to call Mark at 6pm for food", "no context")
+    assert result==TaskType.REMINDER # should get the right task type
+
+def test_live_extract_intent_calendar():
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        pytest.skip("no key") # need key to run test correctly
+    planner = TaskPlanner(ClaudeAdapter())
+    result = planner.extract_intent("Move my 2pm meeting to 4pm", "no context")
+    assert result==TaskType.CALENDAR_UPDATE # should get the right task type
+
 
 
 

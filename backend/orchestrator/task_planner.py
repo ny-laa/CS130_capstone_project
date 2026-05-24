@@ -7,6 +7,15 @@ from datetime import datetime, timezone # UTC time stamp
 from typing import Any
 from uuid import UUID
 
+# propmt for generating intent. I will factor promptst to another file if they get too much.
+INTENT_PROMPT = (
+    "You are an intent classifier."
+    'Return ONLY JSON: {"intent": "<value>"}'
+    "where value is exactly one of: reminder, calendar_update, information_request, morning_digest."
+
+
+)
+
 class PlanStep:
     def __init__(self, tool: Tools | None, params: list, status: TaskStatus):
         self.tool = tool
@@ -99,7 +108,7 @@ class TaskPlanner:
         # needed to split it for the JSON string 
             
             
-        intent_response = self.llm_adapter.handle(query)
+        intent_response = self.llm_adapter.handle(query, system_prompt=INTENT_PROMPT) # added system prompt to ensure intent classifier role is clear to the llm
         intent = intent_response.get("intent")
 
         return TaskType(intent) # directly return the intent
