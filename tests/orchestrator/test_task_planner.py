@@ -109,7 +109,7 @@ def test_delegate_task_uses_planner():
 
     # returned structured otuput should contain the right info. If result is not a JOSN, that means our error handling routine is no implemented or made a mistake. 
     assert result.get_type() == TaskType.REMINDER
-    assert result.status== TaskStatus.PENDING
+    assert result.get_status()== TaskStatus.PENDING
     assert result.user_id == fake_user_id # should match the one we got. 
 
 

@@ -41,6 +41,15 @@ class StructuredTaskPlan:
             return self.plan_steps[self.step_counter]
         else: 
             return None # done or doens' thage steps
+    def to_next_step(self) -> int:
+        self.step_counter+=1
+        if self.step_counter>= len( self.plan_steps):
+            return 1 # signals that we are done
+        return 0
+    def is_done(self) -> bool:
+        return self.step_counter>= len( self.plan_steps)
+    
+    
     def get_type(self):
         return self.task_type
     
@@ -82,6 +91,18 @@ class Task:
         return self.task_plan.get_description()
     def get_plan_steps(self):
         return self.task_plan.get_plan_steps()
+    
+    # for cleaner code, use getters in the future :
+    def get_task_id(self):
+        return self.id
+    def get_user_id(self):
+        return self.user_id
+    def get_escalation_deadline(self):
+        return self.escalation_deadline
+    def get_create_time(self):
+        return self.created_at
+    def get_last_update_time(self):
+        return self.updated_at
     
     def current_step(self):
         return self.task_plan.current_step()
