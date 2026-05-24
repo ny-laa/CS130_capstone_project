@@ -66,7 +66,7 @@ class StructuredTaskPlan:
             
         
 class Task:
-    def __init__(self, id: UUID, user_id: UUID, status: TaskStatus, type: TaskType, description: str, plan_steps: list[PlanStep], escalation_deadline: datetime| None, created_at:datetime, updated_at: datetime) -> None:
+    def __init__(self, id: UUID, user_id: UUID, status: TaskStatus, task_plan: StructuredTaskPlan, escalation_deadline: datetime| None, created_at:datetime, updated_at: datetime) -> None:
         """
         Note: instead of json, I used a list for plan steps since it now makes mor esense to use taht. 
         """
@@ -75,7 +75,7 @@ class Task:
         self.id = id
         self.user_id = user_id
         self.status = status
-        self.task_plan= StructuredTaskPlan(type, description, plan_steps, "") # whoudl we just accept a StructuredTaskPlan obj instead? 
+        self.task_plan= task_plan
         self.escalation_deadline = escalation_deadline
         self.created_at = created_at
         self.updated_at = updated_at
@@ -114,7 +114,7 @@ class TaskPlanner:
 
     
             
-    def create_task_plan(self, query: str, context: dict | str | None = None, intent: str |None = None) -> StructuredTaskPlan:
+    def create_task_plan(self, query: str, context: dict | str | None = None, intent: TaskType |None = None) -> StructuredTaskPlan:
         # call the llm adapter to get the raw plan
         # depending on the intent type, we might want to create different half manuallly constructed pipelines along with different system prompts to guide the llm to output the right format for each intent
         # for example, if intent is calendar_update, we might want to have a system prompt that specifically tells the llm to output a plan that involves calendar_tool, and we might want to pre-fill some of the params for the calendar_tool based on the context

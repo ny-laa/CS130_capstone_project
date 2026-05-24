@@ -113,6 +113,25 @@ def test_delegate_task_uses_planner():
     assert result.user_id == fake_user_id # should match the one we got. 
 
 
+def test_live_delegate_task():
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        pytest.skip("no key")
+    
+    orch = GOrchestrator()
+    fake_user_id = uuid4()
+    result = orch.delegate_task("Remind me to pick up Emma and Max from school at 3 pm", fake_user_id)
+
+    print("delegate task live test output:")
+    print("type:", result.get_type())
+    print("status:", result.get_status())
+    print("steps:", result.get_plan_steps())
+    print("response:", result.task_plan.get_response_message())
+
+    assert result.get_type()== TaskType.REMINDER
+    assert result.get_status() == TaskStatus.PENDING
+    assert len(result.get_plan_steps()) > 0 # MUST have some step!!!
+    assert len(result.task_plan.get_response_message())> 0 # would expect some resposne message. 
+
 
 
 

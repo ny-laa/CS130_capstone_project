@@ -35,9 +35,7 @@ class GOrchestrator:
             id =uuid4(), # task id, how to make unique?
             user_id=user_id,
             status=TaskStatus.PENDING,
-            type=plan.task_type,
-            description=plan.description,
-            plan_steps=plan.plan_steps,
+            task_plan=plan,
             escalation_deadline=None,
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc)
