@@ -3,7 +3,10 @@
 # also handles escalation when G needs human approval before doing something
 
 from backend.adapters.llm.claude_adapter import ClaudeAdapter
-from backend.models.datatypes import TaskType
+from backend.models.datatypes import TaskType, TaskStatus
+from backend.orchestrator.task_planner import TaskPlanner, Task
+from datetime import datetime, timezone
+
 from uuid import UUID, uuid4
 class GOrchestrator:
 
@@ -14,18 +17,33 @@ class GOrchestrator:
     def handle(self, query: str, context: dict = None) -> dict:
         # just pass the query straight to the llm adapter
         # context is optional (e.g. calendar events, user prefs)
-        return self.llm.handle(query, context)
+        # for now systemp prompt "", figure out later
+        return self.llm.handle(query, "", context)
 
-    def delegate_task(self, message: str, user_id: str, context: dict = None) -> dict:
+    def delegate_task(self, message: str, user_id: UUID, context: dict |None = None) -> Task:
         # main entry point from the webhook handlers
         # creates a plan and returns it with user_id and PENDING status
         # TODO: actually persist this to the tasks table once db is wired up
-        plan = self.llm.handle(message, context)
-        return {
-            "user_id": user_id,
-            "status": "PENDING",
-            **plan  # spreads task_type, description, plan_steps, response_message
-        }
+        # TODO: decide how the context is built from external database given user ID. 
+
+        
+        planner = TaskPlanner(self.llm)
+        task_intent = planner.extract_intent(message, str(context)) # need to make context into string
+        plan = planner.create_task_plan(message, context, task_intent)
+
+        task = Task(
+            id =uuid4(), # task id, how to make unique?
+            user_id=user_id,
+            status=TaskStatus.PENDING,
+            type=plan.task_type,
+            description=plan.description,
+            plan_steps=plan.plan_steps,
+            escalation_deadline=None,
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc)
+        )
+
+        return task
     
 
     def handle_incoming_message(self, userID: UUID, rawText: str) -> None:

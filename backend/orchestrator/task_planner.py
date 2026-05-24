@@ -34,14 +34,26 @@ class StructuredTaskPlan:
         self.plan_steps = plan_steps 
         self.response_message = response_message
     
-    def set_response_message(self , new_msg: str):
-        self.response_message = new_msg
+    
     
     def current_step(self):
         if self.plan_steps and self.step_counter< len(self.plan_steps):
             return self.plan_steps[self.step_counter]
         else: 
             return None # done or doens' thage steps
+    def get_type(self):
+        return self.task_type
+    
+    def get_description(self):
+        return self.description
+    def get_plan_steps(self):
+        return self.plan_steps
+        
+    def get_response_message(self):
+        return self.response_message
+    def set_response_message(self , new_msg: str):
+        self.response_message = new_msg
+    
             
         
 class Task:
@@ -54,7 +66,7 @@ class Task:
         self.id = id
         self.user_id = user_id
         self.status = status
-        self.task_plan= StructuredTaskPlan(type, description, plan_steps, "")
+        self.task_plan= StructuredTaskPlan(type, description, plan_steps, "") # whoudl we just accept a StructuredTaskPlan obj instead? 
         self.escalation_deadline = escalation_deadline
         self.created_at = created_at
         self.updated_at = updated_at
@@ -62,8 +74,14 @@ class Task:
     def mark_complete(self):
         self.status = TaskStatus.COMPLETED
 
-    def return_status(self):
+    def get_status(self):
         return self.status
+    def get_type(self):
+        return self.task_plan.get_type()
+    def get_description(self):
+        return self.task_plan.get_description()
+    def get_plan_steps(self):
+        return self.task_plan.get_plan_steps()
     
     def current_step(self):
         return self.task_plan.current_step()
@@ -75,7 +93,7 @@ class TaskPlanner:
 
     
             
-    def create_task_plan(self, query: str, context: dict = None, intent: str = None) -> StructuredTaskPlan:
+    def create_task_plan(self, query: str, context: dict | str | None = None, intent: str |None = None) -> StructuredTaskPlan:
         # call the llm adapter to get the raw plan
         # depending on the intent type, we might want to create different half manuallly constructed pipelines along with different system prompts to guide the llm to output the right format for each intent
         # for example, if intent is calendar_update, we might want to have a system prompt that specifically tells the llm to output a plan that involves calendar_tool, and we might want to pre-fill some of the params for the calendar_tool based on the context
@@ -94,9 +112,6 @@ class TaskPlanner:
             response_message = raw["response_message"],
         )
 
-
-        
-        
     
     def extract_intent(self, rawText: str, userContext: str):
         """optional helper function to extract the user's intent from the raw text, using the llm adapter. this can be used for routing or other purposes."""
