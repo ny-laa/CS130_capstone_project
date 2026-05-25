@@ -1,3 +1,23 @@
-// root component, sets up react router
-// only two routes for now: /register and /auth/callback
-// oculd add more routes later for different pages of the app
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import NavBar from './components/NavBar';
+import Profile from './pages/Profile';
+import Conversations from './pages/Conversations';
+import Tasks from './pages/Tasks';
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <div className="app-layout">
+        <NavBar />
+        <main className="main-content">
+          <Routes>
+            <Route path="/" element={<Navigate to="/tasks" replace />} />
+            <Route path="/tasks" element={<Tasks />} />
+            <Route path="/conversations" element={<Conversations />} />
+            <Route path="/profile" element={<Profile />} />
+          </Routes>
+        </main>
+      </div>
+    </BrowserRouter>
+  );
+}

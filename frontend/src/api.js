@@ -1,0 +1,278 @@
+// All API calls go here. Mocked for now — replace individual functions with real fetch calls when backend is ready.
+
+export async function getUser() {
+  return {
+    name: 'Alex Johnson',
+    phone: '+1 (310) 555-0182',
+    email: 'alex.johnson@example.com',
+    familyMembers: [
+      { id: 1, name: 'Sarah Johnson', relation: 'Spouse' },
+      { id: 2, name: 'Mark Johnson', relation: 'Son' },
+      { id: 3, name: 'Emma Johnson', relation: 'Daughter' },
+    ],
+    contacts: [
+      { id: 1, name: 'Mrs. Carter', role: 'Office Manager', org: "Mark's School", phone: '(310) 555-0201' },
+      { id: 2, name: "Dr. Kim's Office", role: 'Pediatrician', org: 'Cedar Medical', phone: '(310) 555-0344' },
+    ],
+    providers: [
+      { id: 1, name: 'Dr. Lee', specialty: 'Dentist', practice: 'UCLA Westside Dental' },
+      { id: 2, name: 'Dr. Kim', specialty: 'Pediatrician', practice: 'Cedar Medical Group' },
+      { id: 3, name: 'Westside Plumbing', specialty: 'Plumber', practice: '' },
+    ],
+    preferences: {
+      // Communication
+      communicationStyle: 'brief',
+      preferredContact: 'text',
+      callUrgencyThreshold: 'high', // 'any' | 'high' | 'never'
+      // Notification timing
+      quietHoursStart: '22:00',
+      quietHoursEnd: '07:00',
+      keepFreeStart: '22:00',
+      keepFreeEnd: '07:00',
+      activeDays: ['mon', 'tue', 'wed', 'thu', 'fri'],
+      // Morning digest
+      morningDigest: true,
+      digestTime: '08:00',
+      digestContent: 'calendar+tasks', // 'calendar' | 'calendar+email' | 'calendar+tasks'
+      digestTravelTime: false,
+      // Escalation
+      escalationTimeoutMinutes: 30,
+      autoApproveLowRisk: true,
+      maxReminders: 3,
+      // G's behavior
+      tone: 'casual', // 'casual' | 'formal'
+      reminderLeadTime: '60', // minutes: '15' | '30' | '60' | '1440'
+      conflictHandling: 'suggest', // 'suggest' | 'flag'
+    },
+  };
+}
+
+export async function saveUser(data) {
+  console.log('POST /api/users/me', data);
+}
+
+export async function getTaskHistory() {
+  return MOCK_TASK_HISTORY;
+}
+
+export async function getTasks() {
+  return MOCK_TASKS;
+}
+
+export async function approveEscalation(taskId) {
+  console.log('POST /api/tasks/' + taskId + '/approve');
+}
+
+export async function denyEscalation(taskId) {
+  console.log('POST /api/tasks/' + taskId + '/deny');
+}
+
+const MOCK_TASK_HISTORY = [
+  {
+    id: 'th-001',
+    description: 'Remind me to pick up Mark at 4pm today',
+    type: 'Reminder',
+    status: 'COMPLETED',
+    createdAt: '2026-05-24T15:02:00Z',
+    completedAt: '2026-05-24T15:55:30Z',
+    channel: 'sms',
+    conversation: [
+      {
+        id: 1,
+        direction: 'inbound',
+        channel: 'sms',
+        content: 'Remind me to pick up Mark at 4pm today',
+        timestamp: '2026-05-24T15:02:00Z',
+        taskCreated: false,
+      },
+      {
+        id: 2,
+        direction: 'outbound',
+        channel: 'sms',
+        content: "Got it! I'll remind you to pick up Mark at 4:00 PM today.",
+        timestamp: '2026-05-24T15:02:18Z',
+        taskCreated: true,
+      },
+      {
+        id: 3,
+        direction: 'outbound',
+        channel: 'sms',
+        content: "Heads up — it's almost 4 PM! Time to pick up Mark.",
+        timestamp: '2026-05-24T15:55:00Z',
+        taskCreated: false,
+      },
+      {
+        id: 4,
+        direction: 'inbound',
+        channel: 'sms',
+        content: 'Thanks, on my way!',
+        timestamp: '2026-05-24T15:56:10Z',
+        taskCreated: false,
+      },
+    ],
+  },
+  {
+    id: 'th-002',
+    description: "Schedule a dentist appointment for Emma next week after 3pm",
+    type: 'Calendar',
+    status: 'COMPLETED',
+    createdAt: '2026-05-24T15:03:45Z',
+    completedAt: '2026-05-24T16:15:00Z',
+    channel: 'sms',
+    conversation: [
+      {
+        id: 1,
+        direction: 'inbound',
+        channel: 'sms',
+        content: "Can you schedule a dentist appointment for Emma sometime next week? She's free after 3pm",
+        timestamp: '2026-05-24T15:03:45Z',
+        taskCreated: false,
+      },
+      {
+        id: 2,
+        direction: 'outbound',
+        channel: 'sms',
+        content: "On it! I'll check availability at Westside Dental and let you know.",
+        timestamp: '2026-05-24T15:03:58Z',
+        taskCreated: true,
+      },
+      {
+        id: 3,
+        direction: 'outbound',
+        channel: 'sms',
+        content: "I found an opening at Westside Dental on Tuesday May 28 at 3:30 PM. Should I confirm?",
+        timestamp: '2026-05-24T16:10:00Z',
+        taskCreated: false,
+      },
+      {
+        id: 4,
+        direction: 'inbound',
+        channel: 'sms',
+        content: 'Yes go ahead and book it',
+        timestamp: '2026-05-24T16:12:30Z',
+        taskCreated: false,
+      },
+      {
+        id: 5,
+        direction: 'outbound',
+        channel: 'sms',
+        content: "Done! Appointment confirmed: Emma Johnson, Westside Dental, Tuesday May 28 at 3:30 PM. Added to your calendar.",
+        timestamp: '2026-05-24T16:14:55Z',
+        taskCreated: false,
+      },
+    ],
+  },
+  {
+    id: 'th-003',
+    description: 'Call the insurance company about the claim from last month',
+    type: 'Escalation',
+    status: 'COMPLETED',
+    createdAt: '2026-05-23T09:15:00Z',
+    completedAt: '2026-05-23T09:58:00Z',
+    channel: 'voice',
+    callDuration: '3m 42s',
+    transcript: [
+      { speaker: 'User', text: "I need you to call the insurance company about a claim I submitted last month. The claim number is 8847-B.", time: '0:00' },
+      { speaker: 'G', text: "Got it. Which insurance company, and do you have their number handy?", time: '0:08' },
+      { speaker: 'User', text: "BlueCross. 1-800-555-0134.", time: '0:15' },
+      { speaker: 'G', text: "I'll call them now and check on claim 8847-B. I'll report back once I have an update.", time: '0:22' },
+      { speaker: 'G', text: "Reached BlueCross. Claim 8847-B is under review — expect a decision within 5 business days. Reference: CR-2291.", time: '0:38' },
+      { speaker: 'User', text: "Great, thanks.", time: '0:44' },
+    ],
+  },
+  {
+    id: 'th-004',
+    description: "Order more of Sarah's blood pressure medication from the pharmacy",
+    type: 'Reminder',
+    status: 'FAILED',
+    createdAt: '2026-05-23T11:30:00Z',
+    completedAt: '2026-05-23T12:15:00Z',
+    channel: 'sms',
+    conversation: [
+      {
+        id: 1,
+        direction: 'inbound',
+        channel: 'sms',
+        content: "Can you order more of Sarah's blood pressure medication from CVS? Prescription RX-4492.",
+        timestamp: '2026-05-23T11:30:00Z',
+        taskCreated: false,
+      },
+      {
+        id: 2,
+        direction: 'outbound',
+        channel: 'sms',
+        content: "Sure, I'll contact CVS about refilling prescription RX-4492 for Sarah. Give me a moment.",
+        timestamp: '2026-05-23T11:30:22Z',
+        taskCreated: true,
+      },
+      {
+        id: 3,
+        direction: 'outbound',
+        channel: 'sms',
+        content: "CVS says this prescription requires prescriber authorization before it can be refilled. You'll need to contact Dr. Kim's office to request a new authorization.",
+        timestamp: '2026-05-23T12:14:40Z',
+        taskCreated: false,
+      },
+    ],
+  },
+  {
+    id: 'th-005',
+    description: 'Set up a playdate for Mark with Tyler next Saturday afternoon',
+    type: 'Calendar',
+    status: 'COMPLETED',
+    createdAt: '2026-05-22T18:00:00Z',
+    completedAt: '2026-05-22T18:22:00Z',
+    channel: 'voice',
+    callDuration: '1m 58s',
+    transcript: [
+      { speaker: 'User', text: "Can you help me set up a playdate for Mark with his friend Tyler next Saturday afternoon?", time: '0:00' },
+      { speaker: 'G', text: "Happy to help. Do you have Tyler's parents' contact info, or should I look them up from your contacts?", time: '0:09' },
+      { speaker: 'User', text: "They're in my contacts — Taylor family.", time: '0:18' },
+      { speaker: 'G', text: "Found them. Would you prefer a text or a call to coordinate?", time: '0:24' },
+      { speaker: 'User', text: "Text is fine, just check if Saturday afternoon works for them.", time: '0:30' },
+      { speaker: 'G', text: "Done — texted the Taylors. I'll let you know once they respond and block tentative time Saturday 1–4 PM for now.", time: '0:38' },
+    ],
+  },
+];
+
+const MOCK_TASKS = [
+  {
+    id: 'task-001',
+    description: 'Remind me to pick up Mark at 4pm today',
+    type: 'Reminder',
+    status: 'COMPLETED',
+    createdAt: '2026-05-24T15:02:00Z',
+    summary: "Sent reminder at 3:55 PM: \"Heads up — it's almost 4 PM! Time to pick up Mark.\"",
+  },
+  {
+    id: 'task-002',
+    description: "Schedule a dentist appointment for Emma next week after 3pm",
+    type: 'Calendar',
+    status: 'ESCALATION_PENDING',
+    createdAt: '2026-05-24T15:03:45Z',
+    escalationQuestion: "I found an opening at Westside Dental on Tuesday May 28 at 3:30 PM. Should I confirm this appointment?",
+    escalationCreatedAt: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'task-003',
+    description: 'Call the insurance company about the claim from last month',
+    type: 'Escalation',
+    status: 'IN_PROGRESS',
+    createdAt: '2026-05-24T09:15:00Z',
+  },
+  {
+    id: 'task-004',
+    description: "Order more of Sarah's blood pressure medication from the pharmacy",
+    type: 'Reminder',
+    status: 'PENDING',
+    createdAt: '2026-05-24T11:30:00Z',
+  },
+  {
+    id: 'task-005',
+    description: 'Find a plumber to fix the leak under the kitchen sink',
+    type: 'Escalation',
+    status: 'FAILED',
+    createdAt: '2026-05-23T14:00:00Z',
+    summary: 'Unable to reach any available plumbers in the area. Please try calling directly.',
+  },
+];
