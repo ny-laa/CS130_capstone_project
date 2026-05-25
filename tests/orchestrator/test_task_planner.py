@@ -1,7 +1,12 @@
-from unittest.mock import MagicMock
-from backend.orchestrator.task_planner import TaskPlanner
-from backend.models.datatypes import TaskType
+from unittest.mock import MagicMock, patch
+from backend.orchestrator.task_planner import TaskPlanner, StructuredTaskPlan
+from backend.orchestrator.orchestrator import GOrchestrator
+from backend.models.datatypes import TaskType, TaskStatus
 import os 
+from backend.adapters.llm.claude_adapter import ClaudeAdapter
+from uuid import uuid4
+import pytest
+
 
 # for Claude live testing
 from dotenv import load_dotenv
@@ -54,7 +59,7 @@ def test_create_task_plan_returns_given_plan():
 
 def test_live_create_task_plan():
     assert os.getenv("ANTHROPIC_API_KEY")
-    from backend.adapters.llm.claude_adapter import ClaudeAdapter
+    
     planner = TaskPlanner(ClaudeAdapter())
 
     plan = planner.create_task_plan("Remind me to call Max at 1pm to have a beer with him", intent="reminder")
@@ -63,6 +68,69 @@ def test_live_create_task_plan():
     print(plan.task_type, plan.plan_steps,plan.response_message)
     assert plan.task_type == TaskType.REMINDER
     assert len(plan.plan_steps)>0
+
+
+
+def test_live_extract_intent_reminder():
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        pytest.skip("no key") # need key to run test correctly
+    planner = TaskPlanner(ClaudeAdapter())
+    result = planner.extract_intent("Remind me to call Mark at 6pm for food", "no context")
+    assert result==TaskType.REMINDER # should get the right task type
+
+def test_live_extract_intent_calendar():
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        pytest.skip("no key") # need key to run test correctly
+    planner = TaskPlanner(ClaudeAdapter())
+    result = planner.extract_intent("Move my 2pm meeting to 4pm", "no context")
+    assert result==TaskType.CALENDAR_UPDATE # should get the right task type
+
+
+
+
+def test_delegate_task_uses_planner():
+    # it's too strict to mock llm return behavior in order since we could add additional retries or info requests later. I will just mock the planner here.
+    fake_plan= StructuredTaskPlan(
+        task_type=TaskType.REMINDER,
+        description="Call Macy at 6:30pm",
+        plan_steps=[],
+        response_message="Got it! (from hardwired planner)"
+    ) 
+    # swap out the planner inside orchestrator iwth our hardwaried palnener
+    with patch("backend.orchestrator.orchestrator.TaskPlanner") as MockPlanner:
+        fake_planner = MagicMock()
+        fake_planner.extract_intent.return_value = TaskType.REMINDER
+        fake_planner.create_task_plan.return_value = fake_plan
+        # this is statically set, and we only test if the orchestrator calls the right funcitosn in planner and the panner gets the resutls right. 
+        MockPlanner.return_value=fake_planner
+        fake_user_id=uuid4()
+        orch = GOrchestrator(llm_adapter=MagicMock())
+        result = orch.delegate_task("Remind me to call Macy", user_id=fake_user_id) # made up test, time from response should either be infered from google calendar or INFORMATION REQUEST to clarify it
+
+    # returned structured otuput should contain the right info. If result is not a JOSN, that means our error handling routine is no implemented or made a mistake. 
+    assert result.get_type() == TaskType.REMINDER
+    assert result.get_status()== TaskStatus.PENDING
+    assert result.user_id == fake_user_id # should match the one we got. 
+
+
+def test_live_delegate_task():
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        pytest.skip("no key")
+    
+    orch = GOrchestrator()
+    fake_user_id = uuid4()
+    result = orch.delegate_task("Remind me to pick up Emma and Max from school at 3 pm", fake_user_id)
+
+    print("delegate task live test output:")
+    print("type:", result.get_type())
+    print("status:", result.get_status())
+    print("steps:", result.get_plan_steps())
+    print("response:", result.task_plan.get_response_message())
+
+    assert result.get_type()== TaskType.REMINDER
+    assert result.get_status() == TaskStatus.PENDING
+    assert len(result.get_plan_steps()) > 0 # MUST have some step!!!
+    assert len(result.task_plan.get_response_message())> 0 # would expect some resposne message. 
 
 
 
