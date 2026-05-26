@@ -2,6 +2,8 @@
 #local: uvicorn main:app --reload
 #cloud run: Dockerfile binds 0.0.0.0:$PORT
 
+import os
+
 from fastapi import Depends, FastAPI
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -19,6 +21,12 @@ app = FastAPI(
 app.include_router(sms.router)
 app.include_router(call.router)
 
+# Debug endpoints for manually firing outbound tools. Only mounted when
+# DEBUG=true so they can't be hit in prod by accident.
+if os.getenv("DEBUG", "").lower() == "true":
+    from api import debug
+    app.include_router(debug.router)
+
 
 @app.get("/")
 def root() -> dict:
@@ -32,9 +40,9 @@ def health() -> dict:
     return {"status": "ok"}
 
 
-#[GenAI Use] Prompt: Write a FastAPI route GET /health/db that takes in a 
+#[GenAI Use] Prompt: Write a FastAPI route GET /health/db that takes in a
 #SQLAlchemy Session via Depends(get_db), runs a simple query to count the number of tables
-#in the public schema, and returns a json dict with the count and a status ok. 
+#in the public schema, and returns a json dict with the count and a status ok.
 #[GenAI Use] LLM response:
 @app.get("/health/db")
 def health_db(db: Session = Depends(get_db)) -> dict:
@@ -48,4 +56,4 @@ def health_db(db: Session = Depends(get_db)) -> dict:
     return {"status": "ok", "public_table_count": result}
 #[GenAI Use] Response end
 #[GenAI Use] Reflect: I believe this is correct after looking at the code and running
-#some tests. 
+#some tests.
