@@ -14,7 +14,7 @@ from adapters.base import BaseToolAdapter
 # BaseToolAdapter; (2) expose place_call(to, message) -> str that dials the
 # given number and reads the message aloud via Twilio's TTS, returning the
 # call SID; (3) expose execute(params: dict) -> dict for orchestrator uniformity;
-# (4) read TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN/TWILIO_FROM_NUMBER from env vars
+# (4) read TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN/TWILIO_PHONE_NUMBER from env vars
 # as fallback. Use the inline-TwiML pattern (twiml=... on calls.create) so no
 # webhook is needed for the outbound side. Escape the message before
 # interpolating it into the TwiML so user/LLM content doesn't break the XML."
@@ -29,7 +29,7 @@ class OutboundCallTool(BaseToolAdapter):
         super().__init__(tool_name="call")
         self.account_sid = account_sid or os.getenv("TWILIO_ACCOUNT_SID")
         self.auth_token = auth_token or os.getenv("TWILIO_AUTH_TOKEN")
-        self.from_number = from_number or os.getenv("TWILIO_FROM_NUMBER")
+        self.from_number = from_number or os.getenv("TWILIO_PHONE_NUMBER")
         self.client = Client(self.account_sid, self.auth_token)
 
     def place_call(self, to: str, message: str, callback_url: str | None = None) -> str:

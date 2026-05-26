@@ -12,7 +12,7 @@ from adapters.base import BaseToolAdapter
 # (1) inherit from BaseToolAdapter in backend/adapters/base.py, (2) expose
 # send(to, body) -> str that returns Twilio's message SID, (3) expose
 # execute(params: dict) -> dict so the orchestrator can call it uniformly with
-# other tools, and (4) read TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN/TWILIO_FROM_NUMBER
+# other tools, and (4) read TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN/TWILIO_PHONE_NUMBER
 # from env vars as a fallback when args aren't passed to __init__. Use the
 # official twilio Python SDK."
 # [GenAI Use] LLM Response Start
@@ -26,7 +26,7 @@ class SMSTool(BaseToolAdapter):
         super().__init__(tool_name="sms")
         self.account_sid = account_sid or os.getenv("TWILIO_ACCOUNT_SID")
         self.auth_token = auth_token or os.getenv("TWILIO_AUTH_TOKEN")
-        self.from_number = from_number or os.getenv("TWILIO_FROM_NUMBER")
+        self.from_number = from_number or os.getenv("TWILIO_PHONE_NUMBER")
         self.client = Client(self.account_sid, self.auth_token)
 
     def send(self, to: str, body: str) -> str:
