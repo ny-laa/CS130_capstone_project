@@ -7,6 +7,15 @@ from datetime import datetime, timezone # UTC time stamp
 from typing import Any
 from uuid import UUID
 
+# propmt for generating intent. I will factor promptst to another file if they get too much.
+INTENT_PROMPT = (
+    "You are an intent classifier."
+    'Return ONLY JSON: {"intent": "<value>"}'
+    "where value is exactly one of: reminder, calendar_update, information_request, morning_digest."
+
+
+)
+
 class PlanStep:
     def __init__(self, tool: Tools | None, params: list, status: TaskStatus):
         self.tool = tool
@@ -25,18 +34,39 @@ class StructuredTaskPlan:
         self.plan_steps = plan_steps 
         self.response_message = response_message
     
-    def set_response_message(self , new_msg: str):
-        self.response_message = new_msg
+    
     
     def current_step(self):
         if self.plan_steps and self.step_counter< len(self.plan_steps):
             return self.plan_steps[self.step_counter]
         else: 
             return None # done or doens' thage steps
+    def to_next_step(self) -> int:
+        self.step_counter+=1
+        if self.step_counter>= len( self.plan_steps):
+            return 1 # signals that we are done
+        return 0
+    def is_done(self) -> bool:
+        return self.step_counter>= len( self.plan_steps)
+    
+    
+    def get_type(self):
+        return self.task_type
+    
+    def get_description(self):
+        return self.description
+    def get_plan_steps(self):
+        return self.plan_steps
+        
+    def get_response_message(self):
+        return self.response_message
+    def set_response_message(self , new_msg: str):
+        self.response_message = new_msg
+    
             
         
 class Task:
-    def __init__(self, id: UUID, user_id: UUID, status: TaskStatus, type: TaskType, description: str, plan_steps: list[PlanStep], escalation_deadline: datetime| None, created_at:datetime, updated_at: datetime) -> None:
+    def __init__(self, id: UUID, user_id: UUID, status: TaskStatus, task_plan: StructuredTaskPlan, escalation_deadline: datetime| None, created_at:datetime, updated_at: datetime) -> None:
         """
         Note: instead of json, I used a list for plan steps since it now makes mor esense to use taht. 
         """
@@ -45,7 +75,7 @@ class Task:
         self.id = id
         self.user_id = user_id
         self.status = status
-        self.task_plan= StructuredTaskPlan(type, description, plan_steps, "")
+        self.task_plan= task_plan
         self.escalation_deadline = escalation_deadline
         self.created_at = created_at
         self.updated_at = updated_at
@@ -53,8 +83,26 @@ class Task:
     def mark_complete(self):
         self.status = TaskStatus.COMPLETED
 
-    def return_status(self):
+    def get_status(self):
         return self.status
+    def get_type(self):
+        return self.task_plan.get_type()
+    def get_description(self):
+        return self.task_plan.get_description()
+    def get_plan_steps(self):
+        return self.task_plan.get_plan_steps()
+    
+    # for cleaner code, use getters in the future :
+    def get_task_id(self):
+        return self.id
+    def get_user_id(self):
+        return self.user_id
+    def get_escalation_deadline(self):
+        return self.escalation_deadline
+    def get_create_time(self):
+        return self.created_at
+    def get_last_update_time(self):
+        return self.updated_at
     
     def current_step(self):
         return self.task_plan.current_step()
@@ -66,7 +114,7 @@ class TaskPlanner:
 
     
             
-    def create_task_plan(self, query: str, context: dict = None, intent: str = None) -> StructuredTaskPlan:
+    def create_task_plan(self, query: str, context: dict | str | None = None, intent: TaskType |None = None) -> StructuredTaskPlan:
         # call the llm adapter to get the raw plan
         # depending on the intent type, we might want to create different half manuallly constructed pipelines along with different system prompts to guide the llm to output the right format for each intent
         # for example, if intent is calendar_update, we might want to have a system prompt that specifically tells the llm to output a plan that involves calendar_tool, and we might want to pre-fill some of the params for the calendar_tool based on the context
@@ -85,9 +133,6 @@ class TaskPlanner:
             response_message = raw["response_message"],
         )
 
-
-        
-        
     
     def extract_intent(self, rawText: str, userContext: str):
         """optional helper function to extract the user's intent from the raw text, using the llm adapter. this can be used for routing or other purposes."""
@@ -99,7 +144,7 @@ class TaskPlanner:
         # needed to split it for the JSON string 
             
             
-        intent_response = self.llm_adapter.handle(query)
+        intent_response = self.llm_adapter.handle(query, system_prompt=INTENT_PROMPT) # added system prompt to ensure intent classifier role is clear to the llm
         intent = intent_response.get("intent")
 
         return TaskType(intent) # directly return the intent

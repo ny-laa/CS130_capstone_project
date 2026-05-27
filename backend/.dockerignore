@@ -1,0 +1,21 @@
+#keep build context small + no secrets in the image
+.env
+.env.*
+*.env
+.venv/
+venv/
+env/
+
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+
+.git/
+.gitignore
+.DS_Store
+
+#big stuff not needed at runtime
+migrations/versions/
+*.md
+README*

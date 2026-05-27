@@ -1,2 +1,11 @@
-// vite config for the react frontend
-// proxy api calls to localhost backend during dev so we dont get cors issues
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    proxy: {
+      '/api': 'http://localhost:8000',
+    },
+  },
+});

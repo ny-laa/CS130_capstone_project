@@ -37,7 +37,7 @@ class ClaudeAdapter(BaseLLMAdapter):
         )
         self.model = model
 
-    def handle(self, query: str, system_prompt: str, context: dict = None) -> dict:
+    def handle(self, query: str, system_prompt: str|None, context: dict = None) -> dict:
         # build the user message, optionally prepend context (like calendar data)
         user_message = query
         if context:

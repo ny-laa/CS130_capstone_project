@@ -1,10 +1,51 @@
-# main entry point, run this to start the server
-# registers all the routes and middleware and stuff
+#fastapi entry. registers routes.
+#local: uvicorn main:app --reload
+#cloud run: Dockerfile binds 0.0.0.0:$PORT
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from api.webhooks import call, sms
+from config import settings
+from database import get_db
 
-app = FastAPI(title="G")
+app = FastAPI(
+    title="G",
+    description="parent's personal ai secretary -- backend",
+    version="0.1.0",
+)
+
 app.include_router(sms.router)
 app.include_router(call.router)
+
+
+@app.get("/")
+def root() -> dict:
+    #default cloud run service-url check
+    return {"service": "g-backend", "env": settings.APP_ENV, "status": "ok"}
+
+
+@app.get("/health")
+def health() -> dict:
+    #liveness. no db touch -> fast even if pg is down.
+    return {"status": "ok"}
+
+
+#[GenAI Use] Prompt: Write a FastAPI route GET /health/db that takes in a 
+#SQLAlchemy Session via Depends(get_db), runs a simple query to count the number of tables
+#in the public schema, and returns a json dict with the count and a status ok. 
+#[GenAI Use] LLM response:
+@app.get("/health/db")
+def health_db(db: Session = Depends(get_db)) -> dict:
+    #readiness. counts public tables as a connectivity sanity check.
+    result = db.execute(
+        text(
+            "SELECT count(*) FROM information_schema.tables "
+            "WHERE table_schema = 'public'"
+        )
+    ).scalar_one()
+    return {"status": "ok", "public_table_count": result}
+#[GenAI Use] Response end
+#[GenAI Use] Reflect: I believe this is correct after looking at the code and running
+#some tests. 
