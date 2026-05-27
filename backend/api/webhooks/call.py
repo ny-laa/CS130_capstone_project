@@ -8,14 +8,16 @@ from xml.sax.saxutils import escape
 
 from fastapi import APIRouter, HTTPException, Request, Response
 
+from adapters.communication.sms_tool import SMSTool
 from adapters.llm.claude_adapter import ClaudeAdapter
 from config import TWILIO_AUTH_TOKEN
 from middleware.twilio_signature import validate_twilio_signature
 
 router = APIRouter()
 
-# Module-level singleton — reuses Anthropic's HTTP connection pool across requests.
+# Module-level singletons — reuse HTTP connection pools across requests.
 _llm = ClaudeAdapter()
+_sms = SMSTool()
 
 # [GenAI Use] Prompt: "Add multi-turn conversation memory to my Twilio voice
 # webhook in /webhooks/call/transcript. Constraints: (1) keep using the existing
@@ -147,6 +149,17 @@ async def call_transcript(request: Request) -> Response:
     except Exception as exc:
         print(f"[llm error] {type(exc).__name__}: {exc}", flush=True)
         reply = "Sorry, I had trouble with that. Could you try again?"
+
+    # Fire a confirmation SMS so the caller has a written record of what G
+    # heard / agreed to do. Closes the "call → G texts you back" loop for #11.
+    # Wrapped so an outbound failure (A2P not yet approved, no From=, etc.)
+    # doesn't break the call.
+    from_number = params.get("From", "")
+    if from_number:
+        try:
+            _sms.send(to=from_number, body=reply)
+        except Exception as exc:
+            print(f"[sms confirmation error] {type(exc).__name__}: {exc}", flush=True)
 
     # Speak the reply while immediately listening for the parent's next utterance.
     twiml = (
