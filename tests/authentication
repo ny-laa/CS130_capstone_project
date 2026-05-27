@@ -1,0 +1,40 @@
+import { render } from "@testing-library/react";
+import { describe, it, expect, vi } from "vitest";
+import GoogleSignOn from "../../frontend/src/components/registration/GoogleAuthButton";
+
+// Generated this test using GPT
+describe("GoogleSignOn", () => {
+
+    it("renders the Google button", () => {
+
+        window.google = {
+            accounts: {
+                id: {
+                    initialize: vi.fn(),
+                    renderButton: vi.fn(),
+                },
+            },
+        };
+
+        render(<GoogleSignOn />);
+
+        expect(window.google.accounts.id.renderButton).toHaveBeenCalled();
+    });
+
+    it("initializes Google sign in", () => {
+
+        window.google = {
+            accounts: {
+                id: {
+                    initialize: vi.fn(),
+                    renderButton: vi.fn(),
+                },
+            },
+        };
+
+        render(<GoogleSignOn />);
+
+        expect(window.google.accounts.id.initialize).toHaveBeenCalled();
+    });
+
+});
