@@ -1,8 +1,10 @@
 #import all models so Base.metadata is populated for alembic autogen.
 
-from models.message import Message
-from models.preference import Preference
-from models.task import Task
-from models.user import User
+# not needd here at test time! these importa are loaded by alembic eng.py directly
 
-__all__ = ["User", "Task", "Message", "Preference"]
+# from backend.models.message import Message
+# from backend.models.preference import Preference
+# from backend.models.task import Task
+# from backend.models.user import User
+
+# __all__ = ["User", "Task", "Message", "Preference"]
