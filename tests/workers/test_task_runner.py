@@ -26,7 +26,7 @@ def make_task(steps):
         updated_at=datetime.now(timezone.utc)
     )
 
-def test_complete_simple_task(self):
+def test_complete_simple_task():
     mock_tool = MagicMock()
     steps=[PlanStep(tool=Tools.SMS_TOOL, params={"message": "hi"}, status=TaskStatus.PENDING)]
     task = make_task(steps)
@@ -44,6 +44,7 @@ def test_runner_pause_on_destructive_step():
     mock_tool = MagicMock()
     steps = [
         PlanStep(tool=Tools.SMS_TOOL, params={}, status=TaskStatus.PENDING),
+        PlanStep(tool=Tools.CALENDAR_DELETE_TOOL, params={}, status=TaskStatus.PENDING)
     ]
     task = make_task(steps)
     runner = TaskRunner(tool_registry={Tools.SMS_TOOL: mock_tool, Tools.CALENDAR_DELETE_TOOL: mock_tool}) #dangerous calendar deletinog tool
