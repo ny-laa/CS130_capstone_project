@@ -22,7 +22,10 @@ class TaskRunner:
                 return
             
             # should add some gurads and asserts later on what to do if required adaptres is not in registery
+            # for now I will just raise error
             adapter= self.tool_registry.get(step.tool)
+            if adapter is None:
+                raise KeyError(f"No adapter registered for tool:{step.tool}") # will add catch in orchestrator or upper layer. maybe we shoud pass control more nicely.
             if adapter:
                 adapter.execute(step.params)
             step.status = TaskStatus.COMPLETED

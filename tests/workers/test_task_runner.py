@@ -46,6 +46,7 @@ def test_runner_pause_on_destructive_step():
         PlanStep(tool=Tools.SMS_TOOL, params={}, status=TaskStatus.PENDING),
         PlanStep(tool=Tools.CALENDAR_DELETE_TOOL, params={}, status=TaskStatus.PENDING)
     ]
+    # desctructive!!! expect stop to escalation
     task = make_task(steps)
     runner = TaskRunner(tool_registry={Tools.SMS_TOOL: mock_tool, Tools.CALENDAR_DELETE_TOOL: mock_tool}) #dangerous calendar deletinog tool
     runner.run(task)
@@ -54,6 +55,18 @@ def test_runner_pause_on_destructive_step():
 
 
     
+
+def test_runner_raise_tool_not_in_registry():
+    steps = [PlanStep(tool=Tools.SMS_TOOL, params={}, status=TaskStatus.PENDING)]
+    task = make_task(steps)
+    runner= TaskRunner(tool_registry={})
+    # empty registry! should expect raised error 
+    with pytest.raises(KeyError):
+        runner.run(task)
+
+        
+
+
 
 
 
