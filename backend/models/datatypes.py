@@ -20,6 +20,9 @@ class Tools(str, Enum):
     GMAIL_TOOL          = "gmail_tool"
 
     # add more as we write. 
+
+
+
 class CommStyle(str, Enum):
     BRIEF    = "brief"
     DETAILED = "detailed"
