@@ -10,6 +10,6 @@ def test_needs_escalation_true_for_destructive_tool():
 
 def test_needs_escalation_false_for_safe_tool():
     engine = EscalationEngine()
-    steps = [PlanStep(tool=Tools.SMS_TOOL, params={}, status=TaskStatus.PENDING)] # for now we consider sending sms safe by oru llm decisions
+    steps = [PlanStep(tool=Tools.SMS_TOOL, params={}, status=TaskStatus.PENDING)] # for now we consider sending sms safe by our llm decisions
     assert engine.task_needs_escalation(steps) is False
 
