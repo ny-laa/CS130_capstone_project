@@ -48,8 +48,12 @@ class ClaudeAdapter(BaseLLMAdapter):
         response = self.client.messages.create(
             model=self.model,
             max_tokens=1024,
-            system=system_prompt or "",
-            messages=[{"role": "user", "content": user_message}]
+            system=[{
+                "type": "text",
+                "text": system_prompt or "",
+                "cache_control": {"type": "ephemeral"},
+            }],
+            messages=[{"role": "user", "content": user_message}],
         )
 
         # pull the text out of the response
