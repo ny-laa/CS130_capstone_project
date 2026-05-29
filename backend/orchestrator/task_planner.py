@@ -17,7 +17,7 @@ INTENT_PROMPT = (
 )
 
 class PlanStep:
-    def __init__(self, tool: Tools | None, params: list, status: TaskStatus):
+    def __init__(self, tool: Tools | None, params: list|dict, status: TaskStatus):
         self.tool = tool
         self.params= params
         self.status= status
