@@ -2,18 +2,42 @@
 # POST /webhooks/sms - twilio calls this when someone texts G
 # validates HMAC, routes through claude, fires the reply via SMSTool, returns empty TwiML
 
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from sqlalchemy.orm import Session
 
 from adapters.communication.sms_tool import SMSTool
 from adapters.llm.claude_adapter import ClaudeAdapter
 from config import TWILIO_AUTH_TOKEN
+from database import get_db
 from middleware.twilio_signature import validate_twilio_signature
+from models.user import User
 
 router = APIRouter()
 
 # Module-level singletons — reuse HTTP connection pools across requests.
 _llm = ClaudeAdapter()
 _sms = SMSTool()
+
+
+def _user_context(user: User) -> dict:
+    """Sanitized user view we pass to claude as context. NEVER include
+    calendar_token / gmail_token here — those go to tool adapters at
+    dispatch time, not into the LLM prompt."""
+    return {
+        "user_id": str(user.id),
+        "email": user.email,
+        "comm_style": user.comm_style.value if user.comm_style else None,
+        "preferred_channel": (
+            user.preferred_channel.value if user.preferred_channel else None
+        ),
+    }
+
+
+# TODO: swap with the deployed signup URL once the frontend ships.
+ONBOARDING_REPLY = (
+    "Hi! You don't have a G account yet. Sign up at our registration page "
+    "to get started. Reply HELP for support."
+)
 
 
 # [GenAI Use] Prompt: "write a sms-flavored system prompt for the existing
@@ -47,7 +71,10 @@ Tools you can use: sms_tool, calendar_tool, gmail_tool, call_tool"""
 
 
 @router.post("/webhooks/sms")
-async def inbound_sms(request: Request) -> Response:
+async def inbound_sms(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> Response:
     form = await request.form()
     params = {k: str(v) for k, v in form.items()}
 
@@ -69,15 +96,28 @@ async def inbound_sms(request: Request) -> Response:
             media_type="application/xml",
         )
 
-    # TODO(jonathan): look up the user by phone once the users table is queryable.
-    # user = user_service.find_by_phone(db, from_number)
-    # if not user: send onboarding link via SMSTool and return
+    # Look up the user. Unregistered numbers get an onboarding nudge instead
+    # of being routed through Claude (no user context, no calendar/gmail token).
+    user = db.query(User).filter(User.phone_number == from_number).first()
+    if user is None:
+        try:
+            _sms.send(to=from_number, body=ONBOARDING_REPLY)
+        except Exception as exc:
+            print(f"[sms onboarding send error] {type(exc).__name__}: {exc}", flush=True)
+        return Response(
+            content='<?xml version="1.0" encoding="UTF-8"?><Response/>',
+            media_type="application/xml",
+        )
 
     # TODO: persist inbound message + enqueue plan_steps for celery to execute.
     # Synchronous LLM call here is a deviation from "validate → enqueue → return
     # fast"; once elliot's orchestrator + celery exist, this becomes a queue push.
     try:
-        plan = _llm.handle(body, SMS_SYSTEM_PROMPT)
+        plan = _llm.handle(
+            body,
+            SMS_SYSTEM_PROMPT,
+            context={"user": _user_context(user)},
+        )
         reply = (plan.get("response_message") or "").strip() or "Got it."
     except Exception as exc:
         print(f"[sms llm error] {type(exc).__name__}: {exc}", flush=True)

@@ -6,18 +6,40 @@
 
 from xml.sax.saxutils import escape
 
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from sqlalchemy.orm import Session
 
 from adapters.communication.sms_tool import SMSTool
 from adapters.llm.claude_adapter import ClaudeAdapter
 from config import TWILIO_AUTH_TOKEN
+from database import get_db
 from middleware.twilio_signature import validate_twilio_signature
+from models.user import User
 
 router = APIRouter()
 
-# Module-level singletons — reuse HTTP connection pools across requests.
+# Module-level singletons
 _llm = ClaudeAdapter()
 _sms = SMSTool()
+
+
+def _user_context(user: User) -> dict:
+    """Sanitized user view we pass to claude. NEVER include calendar_token /
+    gmail_token here — those go to tool adapters at dispatch time."""
+    return {
+        "user_id": str(user.id),
+        "email": user.email,
+        "comm_style": user.comm_style.value if user.comm_style else None,
+        "preferred_channel": (
+            user.preferred_channel.value if user.preferred_channel else None
+        ),
+    }
+
+
+ONBOARDING_VOICE_MESSAGE = (
+    "Hi! It looks like you don't have a G account yet. "
+    "Please sign up at our registration page first. Goodbye."
+)
 
 # [GenAI Use] Prompt: "Add multi-turn conversation memory to my Twilio voice
 # webhook in /webhooks/call/transcript. Constraints: (1) keep using the existing
@@ -60,7 +82,7 @@ def _is_goodbye(text: str) -> bool:
     return any(p in lower for p in ["goodbye", "bye bye", "talk later", "that's all", "see ya"])
 
 
-def _chat(call_sid: str, user_text: str) -> str:
+def _chat(call_sid: str, user_text: str, user_ctx: dict | None = None) -> str:
     """Append the user turn to history, route through the adapter, append the reply.
 
     Same adapter contract the orchestrator will plug into later — when it lands,
@@ -69,10 +91,15 @@ def _chat(call_sid: str, user_text: str) -> str:
     history = _conversations.setdefault(call_sid, [])
     # Pass a snapshot so later appends in this function don't mutate what the
     # adapter (or anything it captured) is holding.
+    context: dict = {}
+    if history:
+        context["history"] = list(history)
+    if user_ctx:
+        context["user"] = user_ctx
     result = _llm.handle(
         user_text,
         VOICE_SYSTEM_PROMPT,
-        context={"history": list(history)} if history else None,
+        context=context or None,
     )
     reply = (result.get("response_message") or "").strip() or "Got it."
     history.append({"role": "user", "content": user_text})
@@ -101,8 +128,24 @@ async def _params_or_403(request: Request) -> dict[str, str]:
 
 
 @router.post("/webhooks/call")
-async def inbound_call(request: Request) -> Response:
-    await _params_or_403(request)
+async def inbound_call(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> Response:
+    params = await _params_or_403(request)
+    from_number = params.get("From", "")
+
+    # Unregistered numbers get bounced at the greeting — no point starting a
+    # conversation if claude can't identify them or touch their calendar.
+    if from_number:
+        user = db.query(User).filter(User.phone_number == from_number).first()
+        if user is None:
+            twiml = (
+                '<?xml version="1.0" encoding="UTF-8"?>'
+                f"<Response><Say>{escape(ONBOARDING_VOICE_MESSAGE)}</Say></Response>"
+            )
+            return Response(content=twiml, media_type="application/xml")
+
     twiml = (
         '<?xml version="1.0" encoding="UTF-8"?>'
         "<Response>"
@@ -117,9 +160,13 @@ async def inbound_call(request: Request) -> Response:
 
 
 @router.post("/webhooks/call/transcript")
-async def call_transcript(request: Request) -> Response:
+async def call_transcript(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> Response:
     params = await _params_or_403(request)
     call_sid = params.get("CallSid", "unknown")
+    from_number = params.get("From", "")
     speech_raw = params.get("SpeechResult", "").strip()
 
     # Silence ends the call gracefully and clears history.
@@ -140,26 +187,39 @@ async def call_transcript(request: Request) -> Response:
         )
         return Response(content=twiml, media_type="application/xml")
 
+    # Look up the caller. Unregistered numbers shouldn't reach claude —
+    # they get bounced to onboarding and the call ends.
+    user = (
+        db.query(User).filter(User.phone_number == from_number).first()
+        if from_number
+        else None
+    )
+    if user is None:
+        _conversations.pop(call_sid, None)
+        twiml = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            f"<Response><Say>{escape(ONBOARDING_VOICE_MESSAGE)}</Say></Response>"
+        )
+        return Response(content=twiml, media_type="application/xml")
+
     # TODO: persist transcript + enqueue plan_steps for celery to execute.
     # Synchronous LLM call on the webhook thread is a deviation from the
     # architecture's "validate → enqueue → return fast" rule; replace with
     # an async outbound reply once the orchestrator + celery exist.
     try:
-        reply = _chat(call_sid, speech_raw)
+        reply = _chat(call_sid, speech_raw, user_ctx=_user_context(user))
     except Exception as exc:
         print(f"[llm error] {type(exc).__name__}: {exc}", flush=True)
         reply = "Sorry, I had trouble with that. Could you try again?"
 
     # Fire a confirmation SMS so the caller has a written record of what G
     # heard / agreed to do. Closes the "call → G texts you back" loop for #11.
-    # Wrapped so an outbound failure (A2P not yet approved, no From=, etc.)
-    # doesn't break the call.
-    from_number = params.get("From", "")
-    if from_number:
-        try:
-            _sms.send(to=from_number, body=reply)
-        except Exception as exc:
-            print(f"[sms confirmation error] {type(exc).__name__}: {exc}", flush=True)
+    # Wrapped so an outbound failure (A2P not yet approved, etc.) doesn't
+    # break the call.
+    try:
+        _sms.send(to=from_number, body=reply)
+    except Exception as exc:
+        print(f"[sms confirmation error] {type(exc).__name__}: {exc}", flush=True)
 
     # Speak the reply while immediately listening for the parent's next utterance.
     twiml = (
