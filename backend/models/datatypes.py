@@ -14,11 +14,6 @@ from uuid import UUID
 class Tools(str, Enum):
     SMS_TOOL  = "sms_tool"
     CALLTOOL = "call_tool"
-    CALENDAR_TOOL       = "calendar_tool"
-    CALENDAR_DELETE_TOOL = "calendar_delete_tool"
-    SCRIPT_TOOL         = "script_tool"
-    GMAIL_TOOL          = "gmail_tool"
-
     # add more as we write. 
 class CommStyle(str, Enum):
     BRIEF    = "brief"
