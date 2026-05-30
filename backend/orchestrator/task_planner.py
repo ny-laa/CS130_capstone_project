@@ -177,6 +177,95 @@ class TaskPlanner:
             }
 
             """
+        elif intent ==TaskType.CALENDAR_UPDATE:
+            return """
+            You are a task planner for a personal assistant. The user wants to create, move, reschedule, or delete a calendar event. This is NOT a lookup - it is an action that changes the calendar. 
+
+            Avaliable tools:
+            calendar_tool — write/update/delete a calendar event
+
+            Return ONLY valid JSON in this exact shape:
+
+            {
+                "task_type": "calendar_update",
+                "description": "<one-line summary>",
+                "plan_steps": [
+                    {
+                    "tool": "calendar_tool", 
+                    "params": {
+                        "action": "update", 
+                        "event": "...", 
+                        "new_time": "..."}, 
+                        "status": "PENDING"
+                    }
+                ],
+                "response_message": "<friendly confirmation to
+                send back>"
+            }
+            """
+        elif intent == TaskType.INFORMATION_REQUEST:
+            return """
+                You are a task planner for a personal assistant. The user wants to look up specific information — a particular email, a single calendar event, or one specific detail. This is NOT a full day summary (that is morning_digest).
+
+                Available tools (use what fits the query):
+                    1. gmail_tool — search a specific email
+                    2. calendar_tool — look up a specific event
+                    3. sms_tool — send the result back to the user
+
+                Return ONLY valid JSON in this exact shape:
+
+                {
+                    "task_type": "information_request",
+                    "description": "<one-line summary>",
+                    "plan_steps": [
+                        {
+                            "tool": "gmail_tool", 
+                            "params": {"query": "from:Sarah", "max_results": 1}, 
+                            "status": "PENDING"
+                        },
+                        {
+                            "tool": "sms_tool", 
+                            "params": {"message": "<result>"}, 
+                            "status": "PENDING"
+                        }
+                    ],
+                    "response_message": "<friendly confirmation to send back>"
+                }
+            """
+        elif intent==TaskType.MORNING_DIGEST:
+            return"""
+            You are a task planner for a personal assistant. The user wants a full day overview — all calendar events AND important emails for today, compiled into one briefing. This is NOT a specific lookup (that is information_request).
+
+            Available tools (use in this order):
+                1. calendar_tool — fetch all of today's events
+                2. gmail_tool — fetch important unread emails
+                3. sms_tool — send the compiled digest to the user
+
+            Return ONLY valid JSON in this exact shape:
+
+            {
+                "task_type": "morning_digest",
+                "description": "<one-line summary>",
+                "plan_steps": [
+                    {
+                        "tool": "calendar_tool", 
+                        "params": {"date": "today", "max_events": 10}, 
+                        "status": "PENDING"
+                    },
+                    {
+                        "tool": "gmail_tool", 
+                        "params": {"query": "is:unread", "max_results": 5}, 
+                        "status": "PENDING"
+                    },
+                    {
+                        "tool": "sms_tool", 
+                        "params": {"message": "<compiled digest>"}, 
+                        "status": "PENDING"
+                    }
+                ],
+                "response_message": "<friendly good morning message>"
+            }
+            """
         else:
             # TODO: for other task types haven't wrote the task description yet need to make up later. 
             return "Not implemented task type."

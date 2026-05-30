@@ -315,3 +315,18 @@ def test_live_extract_intent_information_request():
     print("live intent extraction output:")
     print("intent:", result)
     assert result == TaskType.INFORMATION_REQUEST
+
+
+
+
+#####################
+# adding more test now to isolate the issue
+
+def test_live_extract_intent_morning_digest():
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        pytest.skip("no key")
+    planner= TaskPlanner(ClaudeAdapter())
+    result = planner.extract_intent("Give me my morning digest for today", "no context")
+    assert result == TaskType.MORNING_DIGEST
+
+    
