@@ -5,9 +5,11 @@
 import os
 
 from fastapi import Depends, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from api.users import router as users_router
 from api.webhooks import call, sms
 from config import settings
 from database import get_db
@@ -18,6 +20,14 @@ app = FastAPI(
     version="0.1.0",
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(users_router)
 app.include_router(sms.router)
 app.include_router(call.router)
 
