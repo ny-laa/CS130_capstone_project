@@ -1,6 +1,7 @@
 # registration and preferences endpoints
 # POST /api/users -- create account
 # PATCH /api/users/{user_id}/preferences -- update prefs after onboarding step 2
+# GET /api/users/{user_id}/messages -- conversation history (audit log)
 
 from uuid import UUID
 
@@ -8,8 +9,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from database import get_db
+from schemas.message import MessageResponse
 from schemas.user import UserCreate, UserPreferencesUpdate, UserResponse
-from services.user_service import create_user, update_user_preferences
+from services.message_service import get_messages_for_user
+from services.user_service import create_user, get_user_by_id, update_user_preferences
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -38,3 +41,15 @@ def patch_preferences(
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     return user
+
+
+@router.get("/{user_id}/messages", response_model=list[MessageResponse])
+def list_messages(
+    user_id: UUID, limit: int = 50, db: Session = Depends(get_db)
+):
+    # return the most recent messages for this user, newest first. used by
+    # the conversations page in the UI so we can replay the thread even
+    # when twilio rejected the outbound send (A2P pending).
+    if get_user_by_id(db, user_id) is None:
+        raise HTTPException(status_code=404, detail="user not found")
+    return get_messages_for_user(db, user_id, limit=limit)

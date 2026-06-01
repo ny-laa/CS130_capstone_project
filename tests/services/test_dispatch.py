@@ -1,7 +1,6 @@
 # basic tests for dispatch helper. used claude to brainstorm edge cases
 # and wrote most of these myself off its list. the two below have full
-# [GenAI Use] blocks because i borrowed more directly -- the mock setup
-# for those was non-obvious.
+# [GenAI Use] blocks when i borrowed speficically 
 
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
@@ -89,7 +88,7 @@ def test_missing_calendar_token_no_injection():
 
 
 def test_unknown_tool_skipped_not_raised():
-    # claude sometimes hallucinates tool names -- shouldn't 500 the webhook
+    # claude sometimes hallucinates tool names, and it shouldn't 500 the webhook
     user = _make_user()
     sms_mock = MagicMock()
     plan = {
@@ -133,7 +132,7 @@ def test_tool_exception_caught_loop_continues():
     assert results[1]["status"] == "ok"  # sms still ran
 # [GenAI Use] LLM Response End
 # [GenAI Use] Reflection: i wouldn't have remembered MagicMock.side_effect can be
-# an exception class -- thought you had to use a wrapper. tested by hand and it
+# an exception class, i thought you had to use a wrapper. tested by hand and it
 # works. tweaked the wording on the error message check to match what dispatch
 # actually formats ("Google 401" substring).
 

@@ -16,3 +16,10 @@ export function updatePreferences(userId, prefs) {
         body: JSON.stringify(prefs),
     });
 }
+
+// fetch the conversation history for a user (audit log of inbound + outbound
+// sms / voice). returns [{id, content, direction, channel, timestamp, task_id}]
+// newest first. used by the conversations page once the UI rewrite lands.
+export function getMessages(userId, limit = 50) {
+    return apiFetch(`/users/${userId}/messages?limit=${limit}`);
+}
