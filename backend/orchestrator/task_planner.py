@@ -18,6 +18,7 @@ INTENT_PROMPT = (
 
 MAX_RETRIES = 5
 
+# requried key fields in structured task plan output from the llm. if any are missing, we will retry with a few-shot example to guide the llm to output the right format
 _REQUIRED_PLAN_KEYS = {"task_type", "description", "plan_steps", "response_message"}
 _REQUIRED_INTENT_KEYS = {"intent"}
 
@@ -133,18 +134,23 @@ class TaskPlanner:
         
         task_type = TaskType(intent) if intent else TaskType.INFORMATION_REQUEST
         system_prompt = self._system_prompt_for(task_type)
+        few_shot_prompt = system_prompt + f"\n\nExample of a valid response:\n{self._few_shot_example(task_type)}"
 
-        try:
-            raw = self.llm_adapter.handle(query, system_prompt, context)
-            missing = _missing_keys(raw, _REQUIRED_PLAN_KEYS)
-            if missing:
-                raise ValueError(f"missing required fields: {missing}") # checkfor fields
-        except ValueError:
-            retry_prompt = system_prompt + f"\n\nExample of a valid response:\n{self._few_shot_example(task_type)}"
-            raw = self.llm_adapter.handle(query, retry_prompt, context)
-            missing = _missing_keys(raw, _REQUIRED_PLAN_KEYS)
-            if missing:
-                raise ValueError(f"LLM response missing required fields after retry: {missing}")
+        # try until MAX_RETRIEs time if the returned llm otuput is in the wrong format or missing keys
+
+        for attempt in range(MAX_RETRIES):
+            current_prompt = system_prompt if attempt == 0 else few_shot_prompt
+            try:
+                raw = self.llm_adapter.handle(query, current_prompt, context)  # raises ValueError if not JSON
+                if not isinstance(raw, dict):
+                    raise ValueError(f"LLM returned non-dict JSON: {type(raw)}")
+                missing = _missing_keys(raw, _REQUIRED_PLAN_KEYS)
+                if not missing:
+                    break
+                raise ValueError(f"missing required fields: {missing}")
+            except ValueError as e:
+                if attempt == MAX_RETRIES - 1:
+                    raise ValueError(f"LLM response missing required fields after {MAX_RETRIES} retries: {e}")
 
         steps = [
             PlanStep(tool=s["tool"], params=s["params"], status=TaskStatus.PENDING) for s in raw.get("plan_steps", [])
@@ -167,11 +173,38 @@ class TaskPlanner:
         # needed to split it for the JSON string 
             
             
-        intent_response = self.llm_adapter.handle(query, system_prompt=INTENT_PROMPT) # added system prompt to ensure intent classifier role is clear to the llm
-        intent = intent_response.get("intent")
+        few_shot_query = query + '\n\nReturn ONLY: {"intent": "<value>"}'
 
-        return TaskType(intent) # directly return the intent
+        for attempt in range(MAX_RETRIES):
+            current_query = query if attempt == 0 else few_shot_query
+            try:
+                intent_response = self.llm_adapter.handle(current_query, system_prompt=INTENT_PROMPT)
+                if not _missing_keys(intent_response, _REQUIRED_INTENT_KEYS):
+                    break
+                raise ValueError("missing intent field")
+            except ValueError as e:
+                # either from parsing llm response as JSON or from msising fields. Retry
+                if attempt == MAX_RETRIES - 1:
+                    raise ValueError(f"LLM intent response invalid after {MAX_RETRIES} retries: {e}")
+
+        return TaskType(intent_response["intent"])
     
+
+
+
+    # [prompt:] Look at the create_task_plan function and teh test file under tests/orchestrator/test_task_planner.py. Understand where we call the LLM to get the plan steps. We want to make sure the LLM outputs the right format, so we check for required fields and retry with a few-shot example if the format is wrong. Generate a few shot examples for each intent type so that the llm can use it as reference. The system prompt should guide the LLM to output the right tools and params for each intent, and the few-shot example should show a valid JSON response for that intent. 
+
+    # [eliot note] It's clear from my test filed and prompts how to format the response, the examples are straighforward and fits our expectations. 
+    def _few_shot_example(self, intent: TaskType) -> str:
+        # examples for how the planner llm would respond to intents. shows the format
+        examples = {
+            TaskType.REMINDER: '{"task_type":"reminder","description":"Pick up kids at 3pm","plan_steps":[{"tool":"user_pref_tool","params":{"user_id":"abc"},"status":"PENDING"},{"tool":"script_tool","params":{"title":"Pick up kids","time":"3pm","context":"","location":"school"},"status":"PENDING"},{"tool":"sms_tool","params":{"message":"Reminder: pick up kids at 3pm"},"status":"PENDING"}],"response_message":"Got it! Reminding you at 3pm."}',
+            TaskType.CALENDAR_UPDATE: '{"task_type":"calendar_update","description":"Move standup to 4pm","plan_steps":[{"tool":"calendar_tool","params":{"action":"update","event":"standup","new_time":"4pm"},"status":"PENDING"}],"response_message":"Done! Standup moved to 4pm."}',
+            TaskType.INFORMATION_REQUEST: '{"task_type":"information_request","description":"Find latest email from Sarah","plan_steps":[{"tool":"gmail_tool","params":{"query":"from:Sarah","max_results":1},"status":"PENDING"},{"tool":"sms_tool","params":{"message":"<result>"},"status":"PENDING"}],"response_message":"Looking it up now!"}',
+            TaskType.MORNING_DIGEST: '{"task_type":"morning_digest","description":"Daily morning briefing","plan_steps":[{"tool":"calendar_tool","params":{"date":"today","max_events":10},"status":"PENDING"},{"tool":"gmail_tool","params":{"query":"is:unread","max_results":5},"status":"PENDING"},{"tool":"sms_tool","params":{"message":"<digest>"},"status":"PENDING"}],"response_message":"Good morning! Here is your digest."}',
+        }
+        return examples.get(intent, "")
+
     def _system_prompt_for(self, intent: TaskType) -> str:
         """
         This is how the planner call the llm for exact steps of calling what tools with what prompts. I think we should consider hardwiring the tool order and only add returned script to the tool from LLM. I will fix this later. Howver, we still need scripts to specify what system prompt is to get the content from LLM """
