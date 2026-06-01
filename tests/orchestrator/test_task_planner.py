@@ -139,7 +139,7 @@ def test_live_delegate_task():
 
 # [AI Agent Prompt] Look at the code in backend/orchestrator, and look at the tests under tests/orchestrator/test_task_planner.py. Write 5 more tests that mock the interaction with real life Claude    using different task types. For instance, you can replace the reminder in TaskType to CALENDAR_UPDATE. The 5 tesets should span across all 4 task types: REMINDER, CALENDAR_UPDATE, INFORMATION_REQUEST, MORNING_DIGEST    
 
-# [ellito's Note] these tests mirrors the correc tformat as before. They also came up with creative design of steps and check if the planner correctly stores them. The issue it, AI missed my intent to create LIVE test with Claude back end. I will ask it to add them 
+# [Elliot's Note] these tests mirrors the correct format as before. They also came up with creative design of steps and check if the planner correctly stores them. The issue it, AI missed my intent to create LIVE test with Claude back end. I will ask it to add them 
 
 
 def test_create_task_plan_reminder_multi_step():
