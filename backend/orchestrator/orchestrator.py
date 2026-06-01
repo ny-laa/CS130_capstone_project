@@ -10,6 +10,27 @@ from backend.workers.task_runner import TaskRunner
 from datetime import datetime, timezone
 
 from uuid import UUID, uuid4
+
+# system prompt for the raw handle() path. forces claude to return a JSON plan
+# instead of responding conversationally. the worker executes the steps — claude
+# must NOT try to do anything itself, only describe what should be done.
+_PLANNER_SYSTEM_PROMPT = """You are G, a task-planning AI for a personal assistant app.
+Your ONLY job is to produce a JSON execution plan. You do NOT send messages, set reminders,
+or take any action yourself — a separate worker will execute each step you specify.
+
+Return ONLY valid JSON, no other text:
+{
+    "task_type": "<one of: reminder, calendar_update, information_request, morning_digest>",
+    "description": "<one-line summary of what the parent is asking for>",
+    "plan_steps": [
+        {"tool": "<tool name>", "params": {}, "status": "PENDING"}
+    ],
+    "response_message": "<short friendly confirmation to send back to the parent>"
+}
+
+Available tools: sms_tool, calendar_tool, gmail_tool, call_tool, script_tool, user_pref_tool"""
+
+
 class GOrchestrator:
 
     def __init__(self, llm_adapter=None):
@@ -19,8 +40,7 @@ class GOrchestrator:
     def handle(self, query: str, context: dict = None) -> dict:
         # just pass the query straight to the llm adapter
         # context is optional (e.g. calendar events, user prefs)
-        # for now systemp prompt "", figure out later
-        return self.llm.handle(query, "", context)
+        return self.llm.handle(query, _PLANNER_SYSTEM_PROMPT, context)
 
     def delegate_task(self, message: str, user_id: UUID, context: dict |None = None) -> Task:
         # main entry point from the webhook handlers
