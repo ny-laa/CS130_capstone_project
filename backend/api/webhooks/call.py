@@ -17,6 +17,7 @@ from middleware.twilio_signature import validate_twilio_signature
 from models.user import User
 from services import dispatch
 from services.message_service import log_message
+from services.user_service import get_user_by_phone
 
 router = APIRouter()
 
@@ -138,7 +139,7 @@ async def inbound_call(
     # Unregistered numbers get bounced at the greeting — no point starting a
     # conversation if claude can't identify them or touch their calendar.
     if from_number:
-        user = db.query(User).filter(User.phone_number == from_number).first()
+        user = get_user_by_phone(db, from_number)
         if user is None:
             twiml = (
                 '<?xml version="1.0" encoding="UTF-8"?>'
@@ -189,11 +190,7 @@ async def call_transcript(
 
     # Look up the caller. Unregistered numbers shouldn't reach claude —
     # they get bounced to onboarding and the call ends.
-    user = (
-        db.query(User).filter(User.phone_number == from_number).first()
-        if from_number
-        else None
-    )
+    user = get_user_by_phone(db, from_number) if from_number else None
     if user is None:
         _conversations.pop(call_sid, None)
         twiml = (

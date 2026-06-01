@@ -13,6 +13,7 @@ from middleware.twilio_signature import validate_twilio_signature
 from models.user import User
 from services import dispatch
 from services.message_service import log_message
+from services.user_service import get_user_by_phone
 
 router = APIRouter()
 
@@ -100,7 +101,7 @@ async def inbound_sms(
 
     # Look up the user. Unregistered numbers get an onboarding nudge instead
     # of being routed through Claude (no user context, no calendar/gmail token).
-    user = db.query(User).filter(User.phone_number == from_number).first()
+    user = get_user_by_phone(db, from_number)
     if user is None:
         try:
             _sms.send(to=from_number, body=ONBOARDING_REPLY)
