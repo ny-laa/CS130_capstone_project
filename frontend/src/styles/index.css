@@ -1015,3 +1015,277 @@ body {
   display: flex;
   flex-direction: column;
 }
+
+/*// [GenAI Use] LLM Response Start
+// Styles for signup card, onboarding layout, progress bar, banner, 
+// family member row, select input, validation states
+// [GenAI Use] LLM Response End
+// [GenAI Use] Reflection: Reviewed new CSS classes and confirmed they
+// follow the same naming conventions used in existing styles. Validation 
+// state styles (error red borders) apply on invalid input which matches
+// the HTML validation behavior in the form components. No existing 
+// styles were overwritten.
+*/
+
+/* ─── Sign Up page ───────────────────────────────────── */
+
+.signup-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f5f7fa;
+  padding: 24px;
+}
+
+.signup-card {
+  background: #fff;
+  border-radius: 16px;
+  padding: 48px 40px;
+  max-width: 400px;
+  width: 100%;
+  text-align: center;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+}
+
+.signup-logo {
+  font-size: 56px;
+  font-weight: 900;
+  color: #E8462A;
+  letter-spacing: -2px;
+  margin-bottom: 8px;
+  line-height: 1;
+}
+
+.signup-tagline {
+  font-size: 16px;
+  color: #6b7280;
+  margin-bottom: 36px;
+}
+
+.btn-google {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 20px;
+  background: #fff;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #1a1a2e;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  margin-bottom: 20px;
+}
+
+.btn-google:hover {
+  background: #f9fafb;
+  border-color: #9ca3af;
+}
+
+.signup-footer {
+  font-size: 14px;
+  color: #6b7280;
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  color: #E8462A;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+}
+
+/* ─── Onboarding pages ───────────────────────────────── */
+
+.onboard-page {
+  max-width: 580px;
+  margin: 0 auto;
+  padding: 32px 24px 64px;
+}
+
+.onboard-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: #1a1a2e;
+  margin-bottom: 24px;
+}
+
+.onboard-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.btn-brand {
+  background: #E8462A;
+  color: #fff;
+  padding: 12px 28px;
+  border-radius: 10px;
+  border: none;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.btn-brand:hover {
+  background: #d13d24;
+}
+
+/* ─── Progress bar ───────────────────────────────────── */
+
+.progress-bar-wrapper {
+  margin-bottom: 28px;
+}
+
+.progress-bar {
+  height: 4px;
+  background: #e5e7eb;
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: #E8462A;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.progress-label {
+  font-size: 12px;
+  color: #9ca3af;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* ─── Banner ─────────────────────────────────────────── */
+
+.banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #fff7f6;
+  border: 1px solid #fca99e;
+  border-radius: 10px;
+  padding: 12px 16px;
+  margin-bottom: 24px;
+  gap: 12px;
+}
+
+.banner-message {
+  font-size: 14px;
+  color: #7f1d1d;
+  font-weight: 500;
+}
+
+.banner-dismiss {
+  background: none;
+  border: none;
+  color: #9ca3af;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  line-height: 1;
+  transition: color 0.15s, background 0.15s;
+}
+
+.banner-dismiss:hover {
+  color: #374151;
+  background: #f3f4f6;
+}
+
+/* ─── Family member row (onboarding) ─────────────────── */
+
+.family-member-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.family-member-row:last-of-type {
+  border-bottom: none;
+}
+
+.select-input {
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 14px;
+  color: #1a1a2e;
+  background: #fff;
+  outline: none;
+  transition: border-color 0.15s;
+  min-width: 120px;
+}
+
+.select-input:focus {
+  border-color: #7c9fff;
+}
+
+.btn-add-member {
+  background: none;
+  border: 1px dashed #d1d5db;
+  color: #6b7280;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 8px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  width: 100%;
+  text-align: center;
+  margin-top: 8px;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.btn-add-member:hover {
+  border-color: #9ca3af;
+  color: #374151;
+}
+
+/* ─── Form validation ────────────────────────────────── */
+
+.input-error {
+  border-color: #ef4444 !important;
+}
+
+.error-msg {
+  font-size: 12px;
+  color: #ef4444;
+  margin-top: 4px;
+}
+
+/* ─── Onboarding responsive ──────────────────────────── */
+
+@media (max-width: 768px) {
+  .signup-card {
+    padding: 36px 24px;
+  }
+
+  .onboard-page {
+    padding: 24px 16px 64px;
+  }
+
+  .family-member-row {
+    flex-wrap: wrap;
+  }
+
+  .select-input {
+    min-width: 0;
+    flex: 1;
+  }
+}
