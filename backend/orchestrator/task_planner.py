@@ -16,6 +16,16 @@ INTENT_PROMPT = (
 
 )
 
+MAX_RETRIES = 5
+
+_REQUIRED_PLAN_KEYS = {"task_type", "description", "plan_steps", "response_message"}
+_REQUIRED_INTENT_KEYS = {"intent"}
+
+
+def _missing_keys(raw: dict, required: set) -> set:
+    return required - raw.keys()
+
+
 class PlanStep:
     def __init__(self, tool: Tools | None, params: list|dict, status: TaskStatus):
         self.tool = tool
@@ -121,16 +131,29 @@ class TaskPlanner:
         # also, the return format would depend on the intent.
 
         
-        system_prompt = self._system_prompt_for(TaskType(intent) if intent else TaskType.INFORMATION_REQUEST)
-        raw = self.llm_adapter.handle(query,system_prompt,context) # Pass in our actual system prompt!!
+        task_type = TaskType(intent) if intent else TaskType.INFORMATION_REQUEST
+        system_prompt = self._system_prompt_for(task_type)
+
+        try:
+            raw = self.llm_adapter.handle(query, system_prompt, context)
+            missing = _missing_keys(raw, _REQUIRED_PLAN_KEYS)
+            if missing:
+                raise ValueError(f"missing required fields: {missing}") # checkfor fields
+        except ValueError:
+            retry_prompt = system_prompt + f"\n\nExample of a valid response:\n{self._few_shot_example(task_type)}"
+            raw = self.llm_adapter.handle(query, retry_prompt, context)
+            missing = _missing_keys(raw, _REQUIRED_PLAN_KEYS)
+            if missing:
+                raise ValueError(f"LLM response missing required fields after retry: {missing}")
+
         steps = [
             PlanStep(tool=s["tool"], params=s["params"], status=TaskStatus.PENDING) for s in raw.get("plan_steps", [])
-        ] # extract the steps 
+        ]
         return StructuredTaskPlan(
             task_type=TaskType(raw["task_type"]),
             description=raw["description"],
             plan_steps=steps,
-            response_message = raw["response_message"],
+            response_message=raw["response_message"],
         )
 
     
