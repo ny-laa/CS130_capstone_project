@@ -67,12 +67,7 @@ class ClaudeAdapter(BaseLLMAdapter):
 
         try:
             return json.loads(raw)
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
             # fallback if claude doesn't return valid json for some reason
             # shouldn't happen often but just in case
-            return {
-                "task_type": "information_request",
-                "description": raw,
-                "plan_steps": [],
-                "response_message": raw
-            }
+            raise ValueError(f"LLM returned non-JSON:, {raw[:300]}") from e
