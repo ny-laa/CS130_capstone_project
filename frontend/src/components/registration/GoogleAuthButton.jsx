@@ -3,26 +3,49 @@
 // Used these docs: https://developers.google.com/identity/gsi/web/guides/get-google-api-clientid
 // https://developers.google.com/identity/gsi/web/guides/display-button#javascript
 // https://vite.dev/guide/env-and-mode
+// Update: used Claude to understand that I need to use oauth2 instead to have persistent tokens
 
-import {useEffect} from "react";
+import {useEffect, useRef} from "react";
+
+// Used Claude to get the correct access/scope
+const ACCESS = [
+    "openid",
+    "email",
+    "profile",
+    "https://www.googleapis.com/auth/gmail.modify",
+    "https://www.googleapis.com/auth/calendar",
+].join(" ");
 
 function GoogleSignOn() {
+    const curClient = useRef(null);
+
     useEffect(() => {
-        const clientID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-        function handleCredentialResponse(response) {
-            console.log("Encoded JWT token: " + response.credential);
+        // to make tokens persist for calender/mail, add outh2
+        const initClient = () => {
+            const client_id = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+            curClient.current = window.google.accounts.oauth2.initCodeClient({
+                client_id, 
+                scope: ACCESS,
+                ux_mode: "redirect",
+                redirect_uri: `${import.meta.env.VITE_API_BASE_URL}/oauth/google`,
+                access_type: "offline",
+                prompt: "consent",
+            });
+        };
+        if (window.google?.accounts?.oauth2){
+            initClient();
         }
-        window.google.accounts.id.initialize({
-            client_id: clientID,
-            callback: handleCredentialResponse
-        });
-        window.google.accounts.id.renderButton(
-            document.getElementById("buttonDiv"),
-            { theme: "outline", size: "large" }
-        );
-    },[]);
+        else {
+            window.addEventListener("load", initClient);
+            return () => window.removeEventListener("load", initClient);
+        }
+    }, []);
+
+    const handleClick = () => {
+        curClient.current?.requestCode();
+    };
     return(
-        <div id="buttonDiv"></div>
+        <button onClick={handleClick}>Sign In</button>
     )
 }
 
