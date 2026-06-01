@@ -222,16 +222,17 @@ def test_sms_tool_routes_through_notify_user():
     assert notify_mock.call_args.kwargs["force"] is True
 
 
-def test_call_tool_with_delay_enqueues_celery_task():
-    # "call me in 30 minutes" -> claude emits delay_seconds=1800. dispatch
-    # hands off to notify_user_task.apply_async with countdown=1800. nothing
-    # fires inline (the bug we're fixing).
+def test_call_tool_with_scheduled_at_enqueues_with_eta():
+    # "call me at 6:55" -> claude returns absolute scheduled_at. dispatch
+    # parses + hands to apply_async(eta=...). nothing fires inline.
+    from datetime import datetime, timedelta, timezone
     user = _make_user()
     db = MagicMock()
+    future = datetime.now(timezone.utc) + timedelta(minutes=7)
     plan = {
         "plan_steps": [
             {"tool": "call_tool",
-             "params": {"message": "reminder", "delay_seconds": 1800},
+             "params": {"message": "reminder", "scheduled_at": future.isoformat()},
              "status": "PENDING"}
         ]
     }
@@ -240,23 +241,23 @@ def test_call_tool_with_delay_enqueues_celery_task():
          patch("services.dispatch.notify_user") as notify_mock:
         results = run_plan(plan, user, db)
 
-    notify_mock.assert_not_called()  # deferred -- don't fire now
+    notify_mock.assert_not_called()
     task_mock.apply_async.assert_called_once()
     kwargs = task_mock.apply_async.call_args.kwargs
-    assert kwargs["countdown"] == 1800.0
     assert kwargs["args"] == [str(user.id), "reminder", "call"]
+    # eta is a tz-aware datetime parsed from the iso string
+    assert kwargs["eta"] == future
     assert results[0]["status"] == "scheduled"
-    assert results[0]["delay_seconds"] == 1800.0
 
 
-def test_call_tool_with_zero_delay_fires_immediately():
-    # delay_seconds=0 should behave the same as no delay -- immediate via notify_user
+def test_call_tool_without_scheduled_at_fires_immediately():
+    # no scheduled_at -> immediate via notify_user (today's behavior)
     user = _make_user()
     db = MagicMock()
     plan = {
         "plan_steps": [
             {"tool": "call_tool",
-             "params": {"message": "now", "delay_seconds": 0},
+             "params": {"message": "now"},
              "status": "PENDING"}
         ]
     }
@@ -268,6 +269,29 @@ def test_call_tool_with_zero_delay_fires_immediately():
 
     task_mock.apply_async.assert_not_called()
     notify_mock.assert_called_once()
+
+
+def test_scheduled_at_in_past_still_enqueues():
+    # if claude misreads and emits a past time, we let celery run it
+    # immediately rather than rolling forward 24h. proves we don't crash.
+    from datetime import datetime, timedelta, timezone
+    user = _make_user()
+    db = MagicMock()
+    past = datetime.now(timezone.utc) - timedelta(minutes=10)
+    plan = {
+        "plan_steps": [
+            {"tool": "sms_tool",
+             "params": {"body": "oops", "scheduled_at": past.isoformat()},
+             "status": "PENDING"}
+        ]
+    }
+
+    with patch("services.dispatch.notify_user_task") as task_mock, \
+         patch("services.dispatch.notify_user"):
+        run_plan(plan, user, db)
+
+    task_mock.apply_async.assert_called_once()
+    assert task_mock.apply_async.call_args.kwargs["eta"] == past
 
 
 def test_sms_tool_falls_back_to_direct_adapter_without_db():

@@ -8,6 +8,13 @@ from twilio.rest import Client
 
 from adapters.base import BaseToolAdapter
 
+# Twilio runs the TwiML the instant the callee picks up. without a leading
+# pause the message starts before someone can fumble the phone onto
+# speaker; without a trailing pause it cuts to dead silence the second G
+# stops talking. tuned for the demo, not a hard spec.
+_PRE_SAY_PAUSE_SECONDS = 2
+_POST_SAY_PAUSE_SECONDS = 2
+
 
 # [GenAI Use] Prompt: "Implement a Twilio outbound voice-call adapter in Python,
 # mirroring the SMSTool I just built. Constraints: (1) inherit from
@@ -47,16 +54,22 @@ class OutboundCallTool(BaseToolAdapter):
             twiml = (
                 '<?xml version="1.0" encoding="UTF-8"?>'
                 "<Response>"
+                f'<Pause length="{_PRE_SAY_PAUSE_SECONDS}"/>'
                 f"<Say>{escape(message)}</Say>"
                 f'<Gather input="speech" action="{escape(callback_url)}"'
                 ' method="POST" speechTimeout="auto" />'
                 "<Say>Goodbye.</Say>"
+                f'<Pause length="{_POST_SAY_PAUSE_SECONDS}"/>'
                 "</Response>"
             )
         else:
             twiml = (
                 '<?xml version="1.0" encoding="UTF-8"?>'
-                f"<Response><Say>{escape(message)}</Say></Response>"
+                "<Response>"
+                f'<Pause length="{_PRE_SAY_PAUSE_SECONDS}"/>'
+                f"<Say>{escape(message)}</Say>"
+                f'<Pause length="{_POST_SAY_PAUSE_SECONDS}"/>'
+                "</Response>"
             )
         call = self.client.calls.create(
             twiml=twiml,

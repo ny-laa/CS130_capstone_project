@@ -2,6 +2,8 @@
 # POST /webhooks/sms - twilio calls this when someone texts G
 # validates HMAC, routes through claude, fires the reply via SMSTool, returns empty TwiML
 
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
@@ -65,7 +67,7 @@ Respond with a JSON object only, no extra text:
 
 Tools you can use: sms_tool, calendar_tool, gmail_tool, call_tool
 
-For sms_tool / call_tool, when the parent asks you to reach out *later* (e.g. "call me in 30 minutes", "text me at 5pm"), set `params.delay_seconds` to the number of seconds from now until the notification should fire. Omit `delay_seconds` (or set 0) when the parent wants the action immediately. Do the math yourself based on the user's phrasing -- "in 30 minutes" -> 1800, "in 2 hours" -> 7200."""
+The current time is provided in the context as `current_time_iso` (ISO 8601 with timezone offset). For sms_tool / call_tool, when the parent asks you to reach out *later* -- either an absolute time ("at 5pm", "tomorrow at 8am") OR a relative duration ("in 30 minutes", "in 2 hours") -- set `params.scheduled_at` to the absolute ISO 8601 timestamp (same timezone as `current_time_iso`) when the notification should fire. Examples: if current_time_iso is "2026-05-31T18:48:00-07:00" and the parent says "in 2 minutes", scheduled_at is "2026-05-31T18:50:00-07:00". If they say "at 6:55", it's "2026-05-31T18:55:00-07:00". Omit `scheduled_at` when the parent wants the action immediately."""
 # [GenAI Use] LLM Response End
 # [GenAI Use] Reflection: shape matches the voice prompt deliberately so when
 # elliot's orchestrator takes over, it can route both channels through the
@@ -126,7 +128,12 @@ async def inbound_sms(
         plan = _llm.handle(
             body,
             SMS_SYSTEM_PROMPT,
-            context={"user": _user_context(user)},
+            context={
+                "user": _user_context(user),
+                # tz-aware local server time -- claude resolves relative phrasing
+                # ("in 2 minutes") and absolute phrasing ("at 6:55") against this
+                "current_time_iso": datetime.now().astimezone().isoformat(),
+            },
         )
         reply = (plan.get("response_message") or "").strip() or "Got it."
     except Exception as exc:

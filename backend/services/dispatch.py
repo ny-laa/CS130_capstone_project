@@ -18,6 +18,7 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__f
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -81,19 +82,30 @@ def run_plan(plan: dict, user: User, db: Session | None = None) -> list[dict]:
             # adapter execute() shapes), accept either so a hallucinated key
             # doesn't drop the notification on the floor
             message = params.get("body") or params.get("message") or ""
-            # `delay_seconds` -> celery countdown. pending notifications live
-            # in redis so they survive uvicorn restarts. omit for immediate.
-            delay_seconds = params.get("delay_seconds")
+            # `scheduled_at` -> absolute ISO 8601 timestamp. claude is given
+            # current_time_iso in context and resolves both "in 2 minutes" and
+            # "at 6:55" to an absolute time. omit for immediate.
+            scheduled_at_raw = params.get("scheduled_at")
             try:
-                if delay_seconds and float(delay_seconds) > 0:
+                if scheduled_at_raw:
+                    eta = datetime.fromisoformat(scheduled_at_raw)
+                    # past eta: celery will run it immediately, which is the
+                    # right move if claude misread the time (better than
+                    # rolling forward 24h to the next occurrence and silently
+                    # firing tomorrow)
+                    if eta < datetime.now(eta.tzinfo):
+                        print(
+                            f"[dispatch] scheduled_at {scheduled_at_raw} is in the past, firing now",
+                            flush=True,
+                        )
                     notify_user_task.apply_async(
                         args=[str(user.id), message, channel],
-                        countdown=float(delay_seconds),
+                        eta=eta,
                     )
                     results.append({
                         "tool": tool_name,
                         "status": "scheduled",
-                        "delay_seconds": float(delay_seconds),
+                        "scheduled_at": eta.isoformat(),
                     })
                 else:
                     result = notify_user(
