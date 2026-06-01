@@ -11,6 +11,7 @@ from config import TWILIO_AUTH_TOKEN
 from database import get_db
 from middleware.twilio_signature import validate_twilio_signature
 from models.user import User
+from services import dispatch
 
 router = APIRouter()
 
@@ -109,9 +110,9 @@ async def inbound_sms(
             media_type="application/xml",
         )
 
-    # TODO: persist inbound message + enqueue plan_steps for celery to execute.
-    # Synchronous LLM call here is a deviation from "validate → enqueue → return
-    # fast"; once elliot's orchestrator + celery exist, this becomes a queue push.
+    # TODO: persist inbound message via message_service. Synchronous LLM call
+    # here is a deviation from "validate → enqueue → return fast"; becomes a
+    # queue push once celery is wired.
     try:
         plan = _llm.handle(
             body,
@@ -121,7 +122,17 @@ async def inbound_sms(
         reply = (plan.get("response_message") or "").strip() or "Got it."
     except Exception as exc:
         print(f"[sms llm error] {type(exc).__name__}: {exc}", flush=True)
+        plan = {}
         reply = "Sorry, I had trouble with that. Try again?"
+
+    # Run any plan_steps claude generated (calendar/gmail/etc). Tokens get
+    # injected from `user` inside dispatch -- never via the LLM. Dispatch
+    # errors don't 5xx the webhook (twilio retries on 5xx, we don't want that).
+    if plan.get("plan_steps"):
+        try:
+            dispatch.run_plan(plan, user)
+        except Exception as exc:
+            print(f"[dispatch error] {type(exc).__name__}: {exc}", flush=True)
 
     # Fire the reply via SMSTool. Wrap so an outbound failure (e.g. A2P not yet
     # approved) doesn't 500 the webhook — twilio just retries on 5xx.
