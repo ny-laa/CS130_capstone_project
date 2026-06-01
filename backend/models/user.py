@@ -21,6 +21,8 @@ class User(Base):
     )
     phone_number: Mapped[str] = mapped_column(String(20), unique=True, index=True)
     email: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
+    #full display name shown in profile ("Alex Johnson"). nullable so existing rows stay valid.
+    full_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     comm_style: Mapped[CommStyle] = mapped_column(
         Enum(CommStyle, name="comm_style", values_callable=lambda e: [m.value for m in e]),
         default=CommStyle.BRIEF,
@@ -46,6 +48,15 @@ class User(Base):
     messages = relationship("Message", back_populates="user", cascade="all, delete-orphan")
     preferences = relationship(
         "Preference", back_populates="user", cascade="all, delete-orphan"
+    )
+    family_members = relationship(
+        "FamilyMember", back_populates="user", cascade="all, delete-orphan"
+    )
+    contacts = relationship(
+        "Contact", back_populates="user", cascade="all, delete-orphan"
+    )
+    providers = relationship(
+        "Provider", back_populates="user", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:

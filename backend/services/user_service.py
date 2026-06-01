@@ -29,11 +29,12 @@ def create_user(
     db: Session,
     phone_number: str,
     email: str | None = None,
+    full_name: str | None = None,
     comm_style: CommStyle = CommStyle.BRIEF, #set to brieff for now
     preferred_channel: PreferredChannel = PreferredChannel.SMS,
     blocked_windows: dict | list | None = None,
 ) -> User:
-    
+
     # handles creation of new parent accoun
     # phoen number is needed since Twilio uses it to match incoming SMS + calls to registered user
 
@@ -47,6 +48,7 @@ def create_user(
     user = User(
         phone_number=phone_number,
         email=email,
+        full_name=full_name,
         comm_style=comm_style,
         preferred_channel=preferred_channel,
         blocked_windows=blocked_windows,
@@ -62,6 +64,51 @@ def create_user(
         raise
 
     return user
+
+
+#[GenAI Use] Prompt: write update_user_profile(db, user_id, full_name=None, email=None) ->
+#User. patch only the fields that are non-None. raise ValueError("User not found") if the
+#user doesnt exist. if the email is changing, check that no OTHER user already has it and
+#raise ValueError("A user with this email already exists!!") on collision. patching to your
+#own current email should be a no-op (no 409). roll back on commit failure.
+#[GenAI Use] LLM response:
+def update_user_profile(
+    db: Session,
+    user_id: UUID,
+    full_name: str | None = None,
+    email: str | None = None,
+) -> User:
+    #patch for the "Your Info" section of the profile page.
+    #phone_number isn't editable here -- changing it requires re-verification
+    #against twilio, handled in a separate flow.
+
+    user = get_user_by_id(db, user_id)
+    if user is None:
+        raise ValueError("User not found")
+
+    if email is not None and email != user.email:
+        clash = get_user_by_email(db, email)
+        if clash and clash.id != user_id:
+            raise ValueError("A user with this email already exists!!")
+        user.email = email
+
+    if full_name is not None:
+        user.full_name = full_name
+
+    try:
+        db.commit()
+        db.refresh(user)
+    except Exception:
+        db.rollback()
+        raise
+
+    return user
+#[GenAI Use] Response end
+#[GenAI Use] Reflect: the `email != user.email` guard short-circuits the duplicate check
+#when a user re-saves their own email -- otherwise it would false-positive 409 against
+#themselves. covered by test_update_user_profile_allows_same_email_for_same_user. error
+#strings are exact-matched by api/users.py to pick 404 vs 409 status codes -- if we
+#rename them we have to update the router too.
 
 
 def update_user_preferences(
