@@ -19,16 +19,31 @@ import Step2Preferences from './pages/Onboard/Step2Preferences';
 // hides NavBar on both step1 and step2.
 // Consulted: https://reactrouter.com/en/main/hooks/use-location
 
+// [GenAI Use] LLM Response Start UPDATE
+// TaskProvider now wraps the whole app. /chat route added.
+// main-content--chat class applied on chat route for full height layout.
+// [GenAI Use] LLM Response End
+// [GenAI Use] Reflection: Wrapping the whole app in TaskProvider means
+// every page can access task state. The chat-specific CSS class removes
+// the normal page padding so the chat fills the full height. Checked
+// existing routes still work.
+
+
 const AUTH_PATHS = ['/signup', '/onboard'];
 
 function AppContent() {
   const { pathname } = useLocation();
   const hideNav = AUTH_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'));
+  const isChatPage = pathname === '/chat';
 
   return (
     <div className={hideNav ? '' : 'app-layout'}>
       {!hideNav && <NavBar />}
-      <main className={hideNav ? '' : 'main-content'}>
+      <main
+        className={
+          hideNav ? '' : `main-content${isChatPage ? ' main-content--chat' : ''}`
+        }
+      >
         <Routes>
           <Route path="/" element={<Navigate to="/tasks" replace />} />
           <Route path="/signup" element={<SignUp />} />
@@ -36,6 +51,7 @@ function AppContent() {
           <Route path="/onboard/step2" element={<Step2Preferences />} />
           <Route path="/register" element={<Register />} />
           <Route path="/tasks" element={<Tasks />} />
+          <Route path="/chat" element={<Chat />} />
           <Route path="/conversations" element={<Conversations />} />
           <Route path="/profile" element={<Profile />} />
         </Routes>
@@ -46,8 +62,10 @@ function AppContent() {
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <AppContent />
-    </BrowserRouter>
+    <TaskProvider>
+      <BrowserRouter>
+        <AppContent />
+      </BrowserRouter>
+    </TaskProvider>
   );
 }

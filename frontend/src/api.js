@@ -1,4 +1,15 @@
 // All API calls go here. Mocked for now — replace individual functions with real fetch calls when backend is ready.
+// [GenAI Use] LLM Response Start
+// Added sendMessage() which calls Anthropic API or falls back to
+// keyword-matched mock. Added parseTaskBlock() to extract task data
+// from task XML tags in AI responses.
+// [GenAI Use] LLM Response End
+// [GenAI Use] Reflection: parseTaskBlock() looks for task tags in
+// the response text and pulls out the task fields. Verified it handles
+// responses with no task block correctly by returning null. The mock
+// returns task blocks for keywords like reminder, schedule, escalation
+// so the UI can be tested without a real API key.
+// Consulted: https://docs.anthropic.com/en/api/messages
 
 export async function getUser() {
   return {

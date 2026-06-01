@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { approveEscalation, denyEscalation } from '../api';
+import { useTasks } from '../context/TaskContext';
 
 // [GenAI Use] LLM Response Start
 // STATUS_COLORS/LABELS maps, formatDate, useCountdown hook,
@@ -9,6 +10,15 @@ import { approveEscalation, denyEscalation } from '../api';
 // Consulted setInterval cleanup docs to confirm no memory leak:
 // https://developer.mozilla.org/en-US/docs/Web/API/setInterval
 // Confirmed api.js mock functions match expected signature.
+
+// [GenAI Use] LLM Response Start UPDATE
+// Approve/Deny now calls updateTask() so status change saves to
+// context and localStorage.
+// [GenAI Use] LLM Response End
+// [GenAI Use] Reflection: Before this change, approve/deny only
+// updated local state so the change was lost on navigation. Now it
+// goes through context so it persists. Verified the badge count in
+// NavBar drops when an escalation is approved or denied.
 
 const STATUS_COLORS = {
   PENDING: '#f59e0b',
@@ -57,20 +67,16 @@ function useCountdown(targetIso) {
 
 function EscalationSection({ taskId, question, escalationCreatedAt }) {
   const countdown = useCountdown(escalationCreatedAt);
-  const [decision, setDecision] = useState(null);
+  const { updateTask } = useTasks();
 
   async function handle(action) {
-    if (action === 'approve') await approveEscalation(taskId);
-    else await denyEscalation(taskId);
-    setDecision(action);
-  }
-
-  if (decision) {
-    return (
-      <p className="escalation-done">
-        {decision === 'approve' ? 'Approved ✓' : 'Denied ✕'}
-      </p>
-    );
+    if (action === 'approve') {
+      await approveEscalation(taskId);
+      updateTask(taskId, { status: 'COMPLETED', summary: 'Escalation approved.' });
+    } else {
+      await denyEscalation(taskId);
+      updateTask(taskId, { status: 'FAILED', summary: 'Escalation denied.' });
+    }
   }
 
   return (
