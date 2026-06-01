@@ -172,6 +172,124 @@ def test_caller_plan_not_mutated():
 # dict the access_token would end up in supabase audit logs.
 
 
+def test_call_tool_routes_through_notify_user():
+    # when claude emits call_tool in a plan step, dispatch should hit
+    # notify_user so the call actually goes out to the user's number (not
+    # to whatever claude hallucinated in params['to']) and outbound gets logged
+    user = _make_user()
+    user.phone_number = "+13105550199"
+    db = MagicMock()
+    plan = {
+        "plan_steps": [
+            {"tool": "call_tool",
+             "params": {"message": "reminder: pick up kids at 3"},
+             "status": "PENDING"}
+        ]
+    }
+
+    with patch("services.dispatch.notify_user") as notify_mock:
+        notify_mock.return_value = {"status": "ok", "sid": "CA1", "channel": "call"}
+        results = run_plan(plan, user, db)
+
+    notify_mock.assert_called_once_with(
+        db, user,
+        message="reminder: pick up kids at 3",
+        channel="call",
+        force=True,  # active conversation -> bypass quiet hours
+    )
+    assert results[0]["status"] == "ok"
+
+
+def test_sms_tool_routes_through_notify_user():
+    user = _make_user()
+    db = MagicMock()
+    plan = {
+        "plan_steps": [
+            {"tool": "sms_tool",
+             "params": {"to": "+1", "body": "remember to call mom"},
+             "status": "PENDING"}
+        ]
+    }
+
+    with patch("services.dispatch.notify_user") as notify_mock:
+        notify_mock.return_value = {"status": "ok", "sid": "SM1", "channel": "sms"}
+        run_plan(plan, user, db)
+
+    # notify_user uses user.phone_number, not claude's params['to'] -- prevents
+    # claude from accidentally texting some other number from the conversation
+    assert notify_mock.call_args.kwargs["message"] == "remember to call mom"
+    assert notify_mock.call_args.kwargs["channel"] == "sms"
+    assert notify_mock.call_args.kwargs["force"] is True
+
+
+def test_call_tool_with_delay_enqueues_celery_task():
+    # "call me in 30 minutes" -> claude emits delay_seconds=1800. dispatch
+    # hands off to notify_user_task.apply_async with countdown=1800. nothing
+    # fires inline (the bug we're fixing).
+    user = _make_user()
+    db = MagicMock()
+    plan = {
+        "plan_steps": [
+            {"tool": "call_tool",
+             "params": {"message": "reminder", "delay_seconds": 1800},
+             "status": "PENDING"}
+        ]
+    }
+
+    with patch("services.dispatch.notify_user_task") as task_mock, \
+         patch("services.dispatch.notify_user") as notify_mock:
+        results = run_plan(plan, user, db)
+
+    notify_mock.assert_not_called()  # deferred -- don't fire now
+    task_mock.apply_async.assert_called_once()
+    kwargs = task_mock.apply_async.call_args.kwargs
+    assert kwargs["countdown"] == 1800.0
+    assert kwargs["args"] == [str(user.id), "reminder", "call"]
+    assert results[0]["status"] == "scheduled"
+    assert results[0]["delay_seconds"] == 1800.0
+
+
+def test_call_tool_with_zero_delay_fires_immediately():
+    # delay_seconds=0 should behave the same as no delay -- immediate via notify_user
+    user = _make_user()
+    db = MagicMock()
+    plan = {
+        "plan_steps": [
+            {"tool": "call_tool",
+             "params": {"message": "now", "delay_seconds": 0},
+             "status": "PENDING"}
+        ]
+    }
+
+    with patch("services.dispatch.notify_user_task") as task_mock, \
+         patch("services.dispatch.notify_user") as notify_mock:
+        notify_mock.return_value = {"status": "ok", "sid": "CA1"}
+        run_plan(plan, user, db)
+
+    task_mock.apply_async.assert_not_called()
+    notify_mock.assert_called_once()
+
+
+def test_sms_tool_falls_back_to_direct_adapter_without_db():
+    # back-compat: callers that don't pass db should still use the registry path
+    user = _make_user()
+    sms_mock = MagicMock()
+    plan = {
+        "plan_steps": [
+            {"tool": "sms_tool",
+             "params": {"to": "+1", "body": "hi"},
+             "status": "PENDING"}
+        ]
+    }
+
+    with patch.dict(TOOL_REGISTRY, {"sms_tool": sms_mock}), \
+         patch("services.dispatch.notify_user") as notify_mock:
+        run_plan(plan, user)  # no db
+
+    sms_mock.execute.assert_called_once()
+    notify_mock.assert_not_called()
+
+
 def test_multiple_steps_in_order():
     # claude might say "read calendar then send sms" -- order matters
     user = _make_user()

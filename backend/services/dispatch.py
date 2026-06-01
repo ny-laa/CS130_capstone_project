@@ -20,11 +20,15 @@ if _REPO_ROOT not in sys.path:
 
 from typing import Any
 
+from sqlalchemy.orm import Session
+
 from adapters.communication.call_tool import OutboundCallTool
 from adapters.communication.sms_tool import SMSTool
 from adapters.google.calendar_tool import CalendarTool
 from adapters.google.gmail_tool import GmailTool
 from models.user import User
+from services.notifications import notify_user
+from workers.tasks.notifications import notify_user_task
 
 
 # Tool name string -> adapter instance. Keys match the strings claude puts
@@ -45,12 +49,20 @@ TOOL_REGISTRY: dict[str, Any] = {
 # the caller's plan dict. skip unknown tool names with a warning rather
 # than raising -- claude sometimes hallucinates tool names."
 # [GenAI Use] LLM Response Start
-def run_plan(plan: dict, user: User) -> list[dict]:
+def run_plan(plan: dict, user: User, db: Session | None = None) -> list[dict]:
     """Execute each step in `plan["plan_steps"]` through TOOL_REGISTRY.
 
     For calendar_tool / gmail_tool steps, the user's stored access_token is
     injected into params before execute() — that token never goes through
     the LLM, only through this wrapper.
+
+    For sms_tool / call_tool steps that target the registered user, we route
+    through notify_user instead of the raw adapter so channel preference and
+    outbound logging stay consistent with the proactive notification path
+    (morning digest, reminders). force=True because we're inside an active
+    conversation -- the user just asked for this, quiet hours don't apply.
+    `db` is optional for back-compat with callers that pre-date this routing;
+    when None, sms_tool/call_tool fall back to the direct adapter call.
 
     Returns a list of `{tool, status, result_or_error}` dicts so the caller
     can surface partial-failure info if needed.
@@ -59,6 +71,39 @@ def run_plan(plan: dict, user: User) -> list[dict]:
     for step in plan.get("plan_steps", []):
         tool_name = step.get("tool")
         params = dict(step.get("params", {}))  # copy, don't mutate caller's dict
+
+        # Outbound notification tools -- route through notify_user when we
+        # have a db handle so outbound messages get logged + channel routed
+        # the same way the scheduler does it.
+        if tool_name in ("sms_tool", "call_tool") and db is not None:
+            channel = "call" if tool_name == "call_tool" else "sms"
+            # claude uses `body` for sms and `message` for calls (matches the
+            # adapter execute() shapes), accept either so a hallucinated key
+            # doesn't drop the notification on the floor
+            message = params.get("body") or params.get("message") or ""
+            # `delay_seconds` -> celery countdown. pending notifications live
+            # in redis so they survive uvicorn restarts. omit for immediate.
+            delay_seconds = params.get("delay_seconds")
+            try:
+                if delay_seconds and float(delay_seconds) > 0:
+                    notify_user_task.apply_async(
+                        args=[str(user.id), message, channel],
+                        countdown=float(delay_seconds),
+                    )
+                    results.append({
+                        "tool": tool_name,
+                        "status": "scheduled",
+                        "delay_seconds": float(delay_seconds),
+                    })
+                else:
+                    result = notify_user(
+                        db, user, message=message, channel=channel, force=True
+                    )
+                    results.append({"tool": tool_name, "status": "ok", "result": result})
+            except Exception as exc:
+                print(f"[dispatch] {tool_name} failed: {type(exc).__name__}: {exc}", flush=True)
+                results.append({"tool": tool_name, "status": "error", "error": str(exc)})
+            continue
 
         # Inject the right token for google tools
         if tool_name == "calendar_tool" and user.calendar_token:

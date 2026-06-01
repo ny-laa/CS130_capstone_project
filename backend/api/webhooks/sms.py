@@ -63,7 +63,9 @@ Respond with a JSON object only, no extra text:
     "response_message": "<short reply, will be sent as SMS>"
 }
 
-Tools you can use: sms_tool, calendar_tool, gmail_tool, call_tool"""
+Tools you can use: sms_tool, calendar_tool, gmail_tool, call_tool
+
+For sms_tool / call_tool, when the parent asks you to reach out *later* (e.g. "call me in 30 minutes", "text me at 5pm"), set `params.delay_seconds` to the number of seconds from now until the notification should fire. Omit `delay_seconds` (or set 0) when the parent wants the action immediately. Do the math yourself based on the user's phrasing -- "in 30 minutes" -> 1800, "in 2 hours" -> 7200."""
 # [GenAI Use] LLM Response End
 # [GenAI Use] Reflection: shape matches the voice prompt deliberately so when
 # elliot's orchestrator takes over, it can route both channels through the
@@ -137,7 +139,7 @@ async def inbound_sms(
     # errors don't 5xx the webhook (twilio retries on 5xx, we don't want that).
     if plan.get("plan_steps"):
         try:
-            dispatch.run_plan(plan, user)
+            dispatch.run_plan(plan, user, db)
         except Exception as exc:
             print(f"[dispatch error] {type(exc).__name__}: {exc}", flush=True)
 

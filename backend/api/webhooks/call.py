@@ -76,7 +76,14 @@ Respond with a JSON object only, no extra text:
 Tools you can use: sms_tool, calendar_tool, gmail_tool, call_tool
 
 If prior conversation history is present in the context, use it to maintain
-continuity (e.g. "make it 3pm" refers to whatever event was just discussed)."""
+continuity (e.g. "make it 3pm" refers to whatever event was just discussed).
+
+For sms_tool / call_tool, when the parent asks you to reach out *later* (e.g.
+"call me back in 30 minutes", "remind me at 5pm"), set `params.delay_seconds`
+to the number of seconds from now until the notification should fire. Omit
+`delay_seconds` (or set 0) when the parent wants the action immediately. Do
+the math yourself based on the user's phrasing -- "in 30 minutes" -> 1800,
+"in 2 hours" -> 7200."""
 
 
 def _is_goodbye(text: str) -> bool:
@@ -228,7 +235,7 @@ async def call_transcript(
     # Dispatch errors are swallowed here so the call doesn't die mid-flight.
     if plan.get("plan_steps"):
         try:
-            dispatch.run_plan(plan, user)
+            dispatch.run_plan(plan, user, db)
         except Exception as exc:
             print(f"[dispatch error] {type(exc).__name__}: {exc}", flush=True)
 
