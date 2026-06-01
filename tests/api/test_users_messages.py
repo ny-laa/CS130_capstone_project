@@ -70,6 +70,100 @@ def test_list_messages_404_when_user_not_found():
     mock_msgs.assert_not_called()  # never queried messages for an unknown user
 
 
+def _fake_user(full_name="Alex Johnson", email="alex@example.com"):
+    #mimics the User ORM row that the profile endpoints return
+    u = MagicMock()
+    u.id = uuid4()
+    u.phone_number = "+13105550199"
+    u.email = email
+    u.full_name = full_name
+    u.comm_style = "brief"
+    u.preferred_channel = "sms"
+    u.blocked_windows = None
+    return u
+
+
+def test_get_user_returns_profile():
+    user = _fake_user()
+
+    app.dependency_overrides[get_db] = _override_db
+    with patch("api.users.get_user_by_id", return_value=user):
+        client = TestClient(app)
+        r = client.get(f"/api/users/{user.id}")
+    app.dependency_overrides.clear()
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["full_name"] == "Alex Johnson"
+    assert body["email"] == "alex@example.com"
+    assert body["phone_number"] == "+13105550199"
+
+
+def test_get_user_404_when_unknown():
+    unknown_id = uuid4()
+
+    app.dependency_overrides[get_db] = _override_db
+    with patch("api.users.get_user_by_id", return_value=None):
+        client = TestClient(app)
+        r = client.get(f"/api/users/{unknown_id}")
+    app.dependency_overrides.clear()
+
+    assert r.status_code == 404
+
+
+def test_patch_user_updates_profile():
+    updated = _fake_user(full_name="Alex P. Johnson", email="newer@example.com")
+
+    app.dependency_overrides[get_db] = _override_db
+    with patch("api.users.update_user_profile", return_value=updated) as mock_update:
+        client = TestClient(app)
+        r = client.patch(
+            f"/api/users/{updated.id}",
+            json={"full_name": "Alex P. Johnson", "email": "newer@example.com"},
+        )
+    app.dependency_overrides.clear()
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["full_name"] == "Alex P. Johnson"
+    assert body["email"] == "newer@example.com"
+    kwargs = mock_update.call_args.kwargs
+    assert kwargs["full_name"] == "Alex P. Johnson"
+    assert kwargs["email"] == "newer@example.com"
+
+
+def test_patch_user_404_when_user_missing():
+    user_id = uuid4()
+
+    app.dependency_overrides[get_db] = _override_db
+    with patch(
+        "api.users.update_user_profile",
+        side_effect=ValueError("User not found"),
+    ):
+        client = TestClient(app)
+        r = client.patch(f"/api/users/{user_id}", json={"full_name": "x"})
+    app.dependency_overrides.clear()
+
+    assert r.status_code == 404
+
+
+def test_patch_user_409_when_email_taken():
+    user_id = uuid4()
+
+    app.dependency_overrides[get_db] = _override_db
+    with patch(
+        "api.users.update_user_profile",
+        side_effect=ValueError("A user with this email already exists!!"),
+    ):
+        client = TestClient(app)
+        r = client.patch(
+            f"/api/users/{user_id}", json={"email": "taken@example.com"}
+        )
+    app.dependency_overrides.clear()
+
+    assert r.status_code == 409
+
+
 def test_list_messages_honors_limit_param():
     # ?limit=N forwarded to the service so the UI can paginate later
     user_id = uuid4()

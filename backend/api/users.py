@@ -10,9 +10,19 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from schemas.message import MessageResponse
-from schemas.user import UserCreate, UserPreferencesUpdate, UserResponse
+from schemas.user import (
+    UserCreate,
+    UserPreferencesUpdate,
+    UserProfileUpdate,
+    UserResponse,
+)
 from services.message_service import get_messages_for_user
-from services.user_service import create_user, get_user_by_id, update_user_preferences
+from services.user_service import (
+    create_user,
+    get_user_by_id,
+    update_user_preferences,
+    update_user_profile,
+)
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -20,10 +30,40 @@ router = APIRouter(prefix="/api/users", tags=["users"])
 @router.post("", response_model=UserResponse, status_code=201)
 def register_user(payload: UserCreate, db: Session = Depends(get_db)):
     try:
-        user = create_user(db, phone_number=payload.phone_number, email=payload.email)
+        user = create_user(
+            db,
+            phone_number=payload.phone_number,
+            email=payload.email,
+            full_name=payload.full_name,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     return user
+
+
+@router.get("/{user_id}", response_model=UserResponse)
+def get_user(user_id: UUID, db: Session = Depends(get_db)):
+    #used by the profile page to hydrate the "Your Info" section.
+    user = get_user_by_id(db, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="user not found")
+    return user
+
+
+@router.patch("/{user_id}", response_model=UserResponse)
+def patch_user(
+    user_id: UUID, payload: UserProfileUpdate, db: Session = Depends(get_db)
+):
+    #profile page "Your Info" save -- updates full_name / email.
+    #phone_number is intentionally not editable here.
+    try:
+        return update_user_profile(
+            db, user_id=user_id, full_name=payload.full_name, email=payload.email
+        )
+    except ValueError as exc:
+        msg = str(exc)
+        status = 404 if msg == "User not found" else 409
+        raise HTTPException(status_code=status, detail=msg)
 
 
 @router.patch("/{user_id}/preferences", response_model=UserResponse)

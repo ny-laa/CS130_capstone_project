@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS users (
     id                 UUID              PRIMARY KEY DEFAULT gen_random_uuid(),
     phone_number       VARCHAR(20)       NOT NULL UNIQUE,
     email              VARCHAR(255)      UNIQUE,
+    full_name          VARCHAR(120),     --display name shown in profile
     comm_style         comm_style        NOT NULL DEFAULT 'brief',
     preferred_channel  preferred_channel NOT NULL DEFAULT 'sms',
     blocked_windows    JSONB,
@@ -24,6 +25,9 @@ CREATE TABLE IF NOT EXISTS users (
     created_at         TIMESTAMPTZ       NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS ix_users_phone_number ON users (phone_number);
+
+--backfill for existing dbs that pre-date full_name. safe to re-run.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS full_name VARCHAR(120);
 
 --tasks
 CREATE TABLE IF NOT EXISTS tasks (
@@ -79,3 +83,36 @@ CREATE TABLE IF NOT EXISTS preferences (
     PRIMARY KEY (user_id, key)
 );
 CREATE INDEX IF NOT EXISTS ix_preferences_user_id ON preferences (user_id);
+
+--family_members - dependents / household members surfaced in profile page
+CREATE TABLE IF NOT EXISTS family_members (
+    id          UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id     UUID         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name        VARCHAR(120) NOT NULL,
+    relation    VARCHAR(60),                       --"Spouse", "Son", "Daughter", free-text
+    created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS ix_family_members_user_id ON family_members (user_id);
+
+--contacts - third parties G may call/text on the user's behalf (schools, offices, etc.)
+CREATE TABLE IF NOT EXISTS contacts (
+    id          UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id     UUID         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name        VARCHAR(120) NOT NULL,
+    role        VARCHAR(120),                      --"Office Manager", "Pediatrician"
+    org         VARCHAR(160),                      --"Mark's School", "Cedar Medical"
+    phone       VARCHAR(40),                       --any format, normalized at call-time
+    created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS ix_contacts_user_id ON contacts (user_id);
+
+--providers - preferred service providers G defaults to when booking/referring
+CREATE TABLE IF NOT EXISTS providers (
+    id          UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id     UUID         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name        VARCHAR(120) NOT NULL,
+    specialty   VARCHAR(120),                      --"Dentist", "Pediatrician", "Plumber"
+    practice    VARCHAR(160),                      --practice / business name, optional
+    created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS ix_providers_user_id ON providers (user_id);
