@@ -4,6 +4,7 @@
 # eventually this will stream audio to deepgram for real-time STT; for now we
 # use twilio's built-in <Gather input="speech"> so we can demo end-to-end.
 
+from datetime import datetime
 from xml.sax.saxutils import escape
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -76,7 +77,18 @@ Respond with a JSON object only, no extra text:
 Tools you can use: sms_tool, calendar_tool, gmail_tool, call_tool
 
 If prior conversation history is present in the context, use it to maintain
-continuity (e.g. "make it 3pm" refers to whatever event was just discussed)."""
+continuity (e.g. "make it 3pm" refers to whatever event was just discussed).
+
+The current time is provided in the context as `current_time_iso` (ISO 8601
+with timezone offset). For sms_tool / call_tool, when the parent asks you to
+reach out *later* -- either an absolute time ("at 5pm", "tomorrow at 8am") OR
+a relative duration ("in 30 minutes", "in 2 hours") -- set
+`params.scheduled_at` to the absolute ISO 8601 timestamp (same timezone as
+`current_time_iso`) when the notification should fire. Examples: if
+current_time_iso is "2026-05-31T18:48:00-07:00" and the parent says "in 2
+minutes", scheduled_at is "2026-05-31T18:50:00-07:00". If they say "at 6:55",
+it's "2026-05-31T18:55:00-07:00". Omit `scheduled_at` when the parent wants
+the action immediately."""
 
 
 def _is_goodbye(text: str) -> bool:
@@ -97,6 +109,9 @@ def _plan(call_sid: str, user_text: str, user_ctx: dict | None = None) -> dict:
         context["history"] = list(history)
     if user_ctx:
         context["user"] = user_ctx
+    # tz-aware local server time -- claude resolves relative phrasing ("in 2
+    # minutes") and absolute phrasing ("at 6:55") against this
+    context["current_time_iso"] = datetime.now().astimezone().isoformat()
     result = _llm.handle(
         user_text,
         VOICE_SYSTEM_PROMPT,
@@ -228,7 +243,7 @@ async def call_transcript(
     # Dispatch errors are swallowed here so the call doesn't die mid-flight.
     if plan.get("plan_steps"):
         try:
-            dispatch.run_plan(plan, user)
+            dispatch.run_plan(plan, user, db)
         except Exception as exc:
             print(f"[dispatch error] {type(exc).__name__}: {exc}", flush=True)
 
