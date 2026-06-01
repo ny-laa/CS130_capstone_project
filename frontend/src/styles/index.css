@@ -48,6 +48,26 @@ body {
   letter-spacing: -1px;
 }
 
+.navbar-signup {
+  display: block;
+  margin: auto 16px 16px;
+  padding: 10px 16px;
+  background: #7c9fff;
+  color: #1a1a2e;
+  text-decoration: none;
+  text-align: center;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  transition: background 0.15s;
+}
+
+.navbar-signup:hover {
+  background: #6889e8;
+  color: #fff;
+}
+
 .navbar-links {
   list-style: none;
   display: flex;
@@ -655,6 +675,10 @@ body {
   }
 
   .navbar-brand {
+    display: none;
+  }
+
+  .navbar-signup {
     display: none;
   }
 

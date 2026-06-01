@@ -1,4 +1,5 @@
-import { NavLink } from 'react-router-dom';
+import { NavLink, Link } from 'react-router-dom';
+import { clearUser } from '../auth';
 
 // [GenAI Use] LLM Response Start
 // NavBar with NAV_ITEMS, NavLink active class styling
@@ -30,6 +31,7 @@ export default function NavBar() {
           </li>
         ))}
       </ul>
+      <Link to="/signup" className="navbar-signup" onClick={clearUser}>Sign Up</Link>
     </nav>
   );
 }
