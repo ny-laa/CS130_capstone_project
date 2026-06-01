@@ -5,6 +5,8 @@
 from backend.adapters.llm.claude_adapter import ClaudeAdapter
 from backend.models.datatypes import TaskType, TaskStatus
 from backend.orchestrator.task_planner import TaskPlanner, Task
+from backend.orchestrator.escalation_engine import EscalationEngine
+from backend.workers.task_runner import TaskRunner
 from datetime import datetime, timezone
 
 from uuid import UUID, uuid4
@@ -44,12 +46,32 @@ class GOrchestrator:
         return task
     
 
-    def handle_incoming_message(self, userID: UUID, rawText: str) -> None:
-        # TODO: this is for two-way conversations, where G might ask follow-up questions and the parent can reply
-        pass  # will implement this later once we have some basic tasks working
+    def request_escalation_approval(self, task: Task, sms_tool, to: str) -> None:
+        # we could change up the prompt to more specific or friendly if we want, but the idea is to ask the parent to approve or deny the escalation by clicking teh button of approvala
+        step = task.task_plan.current_step()
+        question= f"G needs your approval to run {step.tool} with params {step.params}. Open the G app to Approve or Deny."
+        task.escalation_question = question
+        sms_tool.execute({"to": to, "message": question})
 
-    def resume_task_from_reply(self, userID: UUID, taskID: UUID, replyText: str) -> None:
-        # TODO: this is for when G needs to ask the parent a question in the middle of executing a task, e.g. "which event do you want to move?" and then the parent replies with the answer
-        pass  # will implement this later once we have some basic tasks working
+    def resume_task_from_reply(self, task: Task, approved: bool, tool_registry: dict) -> None:
+        # update task status according to the replys 
+        # we assume a struvrued field that is from the website approve button or llm interpretation of SMS / call resposne
+        if not approved:
+            task.status = TaskStatus.FAILED
+            return
+        step = task.task_plan.current_step()
+        adapter=tool_registry.get(step.tool)
+        if adapter is None:
+            raise KeyError(f"No adapter for tool: {step.tool}")
+        adapter.execute(step.params)
+        step.status= TaskStatus.COMPLETED
+        task.task_plan.to_next_step()
+        runner = TaskRunner(tool_registry=tool_registry)
+        runner.run(task)
+
+    def handle_incoming_message(self, userID: UUID, rawText: str) -> None:
+        # call cases
+        # TODO: two-way conversation handling
+        pass
 
 
