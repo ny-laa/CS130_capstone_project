@@ -28,11 +28,11 @@ export default function Step1Family() {
     const data = JSON.parse(saved);
     if (data.name) setName(data.name);
     if (data.phone) setPhone(data.phone);
-    if (data.familyMembers?.length) setMembers(data.familyMembers);
+    if (data.familyMembers?.length) setMembers(data.familyMembers.map((m) => ({ phone_number: '', ...m })));
   }, [navigate]);
 
   function addMember() {
-    setMembers((ms) => [...ms, { id: Date.now(), name: '', relation: '' }]);
+    setMembers((ms) => [...ms, { id: Date.now(), name: '', relation: '', phone_number: '' }]);
   }
 
   function updateMember(id, updated) {

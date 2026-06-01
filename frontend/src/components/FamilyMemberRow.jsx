@@ -29,6 +29,13 @@ export default function FamilyMemberRow({ member, onChange, onRemove }) {
           <option key={r} value={r}>{r}</option>
         ))}
       </select>
+      <input
+        type="tel"
+        className="text-input"
+        placeholder="Phone (optional)"
+        value={member.phone_number}
+        onChange={(e) => onChange({ ...member, phone_number: e.target.value })}
+      />
       <button className="btn-remove" onClick={onRemove} aria-label="Remove">✕</button>
     </div>
   );

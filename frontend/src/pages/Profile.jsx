@@ -32,7 +32,7 @@ export default function Profile() {
   const [prefs, setPrefs] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [newMember, setNewMember] = useState({ name: '', relation: '' });
+  const [newMember, setNewMember] = useState({ name: '', relation: '', phone_number: '' });
   const [newContact, setNewContact] = useState({ name: '', role: '', org: '', phone: '' });
   const [newProvider, setNewProvider] = useState({ name: '', specialty: '', practice: '' });
 
@@ -59,7 +59,7 @@ export default function Profile() {
   function addMember() {
     if (!newMember.name.trim()) return;
     setUser((u) => ({ ...u, familyMembers: [...u.familyMembers, { id: Date.now(), ...newMember }] }));
-    setNewMember({ name: '', relation: '' });
+    setNewMember({ name: '', relation: '', phone_number: '' });
   }
   function removeMember(id) {
     setUser((u) => ({ ...u, familyMembers: u.familyMembers.filter((m) => m.id !== id) }));
@@ -138,6 +138,7 @@ export default function Profile() {
               <li key={m.id} className="member-item">
                 <span>
                   {m.name} <span className="member-relation">({m.relation})</span>
+                  {m.phone_number && <span className="contact-phone"> · {m.phone_number}</span>}
                 </span>
                 <button className="btn-remove" onClick={() => removeMember(m.id)}>✕</button>
               </li>
@@ -157,6 +158,14 @@ export default function Profile() {
             placeholder="Relation"
             value={newMember.relation}
             onChange={(e) => setNewMember((m) => ({ ...m, relation: e.target.value }))}
+            onKeyDown={(e) => e.key === 'Enter' && addMember()}
+          />
+          <input
+            type="tel"
+            className="text-input"
+            placeholder="Phone (optional)"
+            value={newMember.phone_number}
+            onChange={(e) => setNewMember((m) => ({ ...m, phone_number: e.target.value }))}
             onKeyDown={(e) => e.key === 'Enter' && addMember()}
           />
           <button className="btn btn-primary" onClick={addMember}>Add</button>

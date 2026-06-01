@@ -48,6 +48,26 @@ body {
   letter-spacing: -1px;
 }
 
+.navbar-signup {
+  display: block;
+  margin: auto 16px 16px;
+  padding: 10px 16px;
+  background: #7c9fff;
+  color: #1a1a2e;
+  text-decoration: none;
+  text-align: center;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  transition: background 0.15s;
+}
+
+.navbar-signup:hover {
+  background: #6889e8;
+  color: #fff;
+}
+
 .navbar-links {
   list-style: none;
   display: flex;
@@ -658,6 +678,10 @@ body {
     display: none;
   }
 
+  .navbar-signup {
+    display: none;
+  }
+
   .navbar-links {
     flex-direction: row;
     justify-content: space-around;
@@ -1052,7 +1076,7 @@ body {
 .signup-logo {
   font-size: 56px;
   font-weight: 900;
-  color: #E8462A;
+  color: #3b5bdb;
   letter-spacing: -2px;
   margin-bottom: 8px;
   line-height: 1;
@@ -1095,7 +1119,7 @@ body {
 .link-btn {
   background: none;
   border: none;
-  color: #E8462A;
+  color: #3b5bdb;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
@@ -1125,7 +1149,7 @@ body {
 }
 
 .btn-brand {
-  background: #E8462A;
+  background: #3b5bdb;
   color: #fff;
   padding: 12px 28px;
   border-radius: 10px;
@@ -1137,7 +1161,7 @@ body {
 }
 
 .btn-brand:hover {
-  background: #d13d24;
+  background: #2f4ac4;
 }
 
 /* ─── Progress bar ───────────────────────────────────── */
@@ -1156,7 +1180,7 @@ body {
 
 .progress-bar-fill {
   height: 100%;
-  background: #E8462A;
+  background: #3b5bdb;
   border-radius: 2px;
   transition: width 0.3s ease;
 }
@@ -1175,8 +1199,8 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: #fff7f6;
-  border: 1px solid #fca99e;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
   border-radius: 10px;
   padding: 12px 16px;
   margin-bottom: 24px;
@@ -1185,7 +1209,7 @@ body {
 
 .banner-message {
   font-size: 14px;
-  color: #7f1d1d;
+  color: #1e3a8a;
   font-weight: 500;
 }
 
