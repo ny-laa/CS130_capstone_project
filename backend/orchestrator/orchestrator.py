@@ -11,9 +11,11 @@ from datetime import datetime, timezone
 
 from uuid import UUID, uuid4
 
-# system prompt for the raw handle() path. forces claude to return a JSON plan
-# instead of responding conversationally. the worker executes the steps — claude
-# must NOT try to do anything itself, only describe what should be done.
+
+# [AI prompt]: generate a Planner system prompt that forces claude to return a JSON plan with fields task_type, description, plan_steps (list of tool, params, status), and response_message. The prompt should make it clear that the LLM should NOT try to execute any steps itself, only return the plan. Available tools are sms_tool, calendar_tool, gmail_tool, call_tool, script_tool, user_pref_tool. The task types can be reminder, calendar_update, information_request, morning_digest. The response_message is a short friendly confirmation to send back to the parent after the plan is created.
+
+#[ellito note] This is clear and uses the same schema as before. I will jsut use it in the handle function 
+
 _PLANNER_SYSTEM_PROMPT = """You are G, a task-planning AI for a personal assistant app.
 Your ONLY job is to produce a JSON execution plan. You do NOT send messages, set reminders,
 or take any action yourself — a separate worker will execute each step you specify.
