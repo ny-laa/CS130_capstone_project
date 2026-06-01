@@ -16,6 +16,7 @@ from database import get_db
 from middleware.twilio_signature import validate_twilio_signature
 from models.user import User
 from services import dispatch
+from services.message_service import log_message
 
 router = APIRouter()
 
@@ -201,6 +202,12 @@ async def call_transcript(
         )
         return Response(content=twiml, media_type="application/xml")
 
+    # Log inbound voice so the UI can replay the conversation later.
+    try:
+        log_message(db, content=speech_raw, direction="inbound", channel="voice", user_id=user.id)
+    except Exception as exc:
+        print(f"[voice inbound log error] {type(exc).__name__}: {exc}", flush=True)
+
     # Get the full plan from claude, then dispatch any tool calls before
     # speaking the response. Synchronous on the webhook thread; becomes a
     # celery push once that's wired.
@@ -211,6 +218,13 @@ async def call_transcript(
         print(f"[llm error] {type(exc).__name__}: {exc}", flush=True)
         plan = {}
         reply = "Sorry, I had trouble with that. Could you try again?"
+
+    # Log outbound voice (what gets spoken via TwiML below) regardless of
+    # downstream outcomes -- it's what G said, the UI needs it.
+    try:
+        log_message(db, content=reply, direction="outbound", channel="voice", user_id=user.id)
+    except Exception as exc:
+        print(f"[voice outbound log error] {type(exc).__name__}: {exc}", flush=True)
 
     # Run any plan_steps claude generated (calendar/gmail updates etc).
     # Tokens get injected from `user` inside dispatch -- never via the LLM.
@@ -229,6 +243,13 @@ async def call_transcript(
         _sms.send(to=from_number, body=reply)
     except Exception as exc:
         print(f"[sms confirmation error] {type(exc).__name__}: {exc}", flush=True)
+
+    # Log outbound SMS confirmation regardless of send success -- a2p-rejected
+    # sends still show in the UI so we can demo end-to-end while pending.
+    try:
+        log_message(db, content=reply, direction="outbound", channel="sms", user_id=user.id)
+    except Exception as exc:
+        print(f"[sms confirmation log error] {type(exc).__name__}: {exc}", flush=True)
 
     # Speak the reply while immediately listening for the parent's next utterance.
     twiml = (

@@ -12,6 +12,7 @@ from database import get_db
 from middleware.twilio_signature import validate_twilio_signature
 from models.user import User
 from services import dispatch
+from services.message_service import log_message
 
 router = APIRouter()
 
@@ -110,9 +111,14 @@ async def inbound_sms(
             media_type="application/xml",
         )
 
-    # TODO: persist inbound message via message_service. Synchronous LLM call
-    # here is a deviation from "validate → enqueue → return fast"; becomes a
-    # queue push once celery is wired.
+    # Log inbound so the UI can replay the conversation later.
+    try:
+        log_message(db, content=body, direction="inbound", channel="sms", user_id=user.id)
+    except Exception as exc:
+        print(f"[sms inbound log error] {type(exc).__name__}: {exc}", flush=True)
+
+    # Synchronous LLM call here is a deviation from "validate → enqueue →
+    # return fast"; becomes a queue push once celery is wired.
     try:
         plan = _llm.handle(
             body,
@@ -140,6 +146,13 @@ async def inbound_sms(
         _sms.send(to=from_number, body=reply)
     except Exception as exc:
         print(f"[sms send error] {type(exc).__name__}: {exc}", flush=True)
+
+    # Log outbound regardless of send success -- a2p-rejected sends still
+    # show in the UI so we can demo end-to-end while twilio verification is pending.
+    try:
+        log_message(db, content=reply, direction="outbound", channel="sms", user_id=user.id)
+    except Exception as exc:
+        print(f"[sms outbound log error] {type(exc).__name__}: {exc}", flush=True)
 
     # Architecture: webhook stays thin, return empty TwiML 200.
     return Response(
