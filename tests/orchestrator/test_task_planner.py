@@ -329,4 +329,51 @@ def test_live_extract_intent_morning_digest():
     result = planner.extract_intent("Give me my morning digest for today", "no context")
     assert result == TaskType.MORNING_DIGEST
 
-    
+
+def test_create_task_plan_retries_on_missing_fields():
+    # now added test no missing response field case from planner. we shoudl detect this and retry sending the quewry 
+    mock_llm = MagicMock()
+    mock_llm.handle.side_effect = [
+        {"task_type": "reminder"},  # first call: missing fields
+        {
+            "task_type": "reminder",
+            "description": "Call Lucy at 3pm",
+            "plan_steps": [{"tool": "sms_tool", "params": {"message": "Call Lucy"}, "status": "PENDING"}],
+            "response_message": "Got it!",
+        },
+    ]
+    planner = TaskPlanner(mock_llm)
+    plan = planner.create_task_plan("Remind me to call Lucy at 3pm", intent="reminder")
+
+    assert plan.task_type == TaskType.REMINDER
+    assert mock_llm.handle.call_count == 2
+
+
+
+def test_create_task_plan_retries_on_wrong_format():
+    # wrong format not json
+    mock_llm = MagicMock()
+    mock_llm.handle.side_effect = [
+        {"Yes, I'm happy to remind you to call lucy at 3 pm! I will add tshi to your calenar ;)"},  # first call: wrong format
+        {
+            "task_type": "reminder",
+            "description": "Call Lucy at 3pm",
+            "plan_steps": [{"tool": "sms_tool", "params": {"message": "Call Lucy"}, "status": "PENDING"}],
+            "response_message": "Got it!",
+        },
+    ]
+    planner = TaskPlanner(mock_llm)
+    plan = planner.create_task_plan("Remind me to call Lucy at 3pm", intent="reminder")
+
+    assert plan.task_type == TaskType.REMINDER
+    assert mock_llm.handle.call_count == 2 # second response is leagal 
+
+def test_create_task_plan_raises_after_max_retries():
+    mock_llm = MagicMock()
+    mock_llm.handle.return_value = {"task_type": "reminder"}  # always missing fields
+
+    planner = TaskPlanner(mock_llm)
+    with pytest.raises(ValueError, match="missing required fields"):
+        planner.create_task_plan("Remind me to call Lucy at 3pm", intent="reminder")
+        # give up after max try.. go to human support. 
+
