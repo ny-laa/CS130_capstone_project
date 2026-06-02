@@ -6,6 +6,9 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 from models.datatypes import CommStyle, PreferredChannel
 from models.user import User
+from datetime import datetime, timedelta
+import httpx
+from config import settings
 
 
 def get_user_by_id(db: Session, user_id: UUID) -> User | None:
@@ -143,27 +146,24 @@ def update_user_preferences(
 
     return user
 
-
-def save_google_tokens(
+# Used Claude to connect/update the following two functions to match the oauth changes made in oauth.py
+def save_google_oauth(
     db: Session,
     user_id: UUID,
-    calendar_token: str | None = None,
-    gmail_token: str | None = None,
+    access_token: str,
+    refresh_token: str | None,
+    expiry: str,
 ) -> User:
-    # Save Google access tokens after the OAuth flow finishes.
-
-    # Note: This func only STORESS tokens, auth layer is responsible for exchanging OAuth codes, refreshing expired tokens, encrypting tokens before production use
-   
     user = get_user_by_id(db, user_id)
-
     if user is None:
         raise ValueError("User not found")
 
-    if calendar_token is not None:
-        user.calendar_token = calendar_token
-
-    if gmail_token is not None:
-        user.gmail_token = gmail_token
+    existing = user.google_oauth or {}
+    user.google_oauth = {
+        "access_token": access_token,
+        "refresh_token": refresh_token or existing.get("refresh_token"),
+        "expiry": expiry,
+    }
 
     try:
         db.commit()
@@ -175,24 +175,11 @@ def save_google_tokens(
     return user
 
 
-def get_calendar_token(db: Session, user_id: UUID) -> str | None:
-
+def get_google_oauth(db: Session, user_id: UUID) -> dict | None:
     user = get_user_by_id(db, user_id)
-
     if user is None:
         raise ValueError("User not found")
-
-    return user.calendar_token
-
-
-def get_gmail_token(db: Session, user_id: UUID) -> str | None:
-
-    user = get_user_by_id(db, user_id)
-
-    if user is None:
-        raise ValueError("User not found")
-
-    return user.gmail_token
+    return user.google_oauth
 
 
 def delete_user(db: Session, user_id: UUID) -> bool:
@@ -213,3 +200,59 @@ def delete_user(db: Session, user_id: UUID) -> bool:
         raise
 
     return True
+
+def refresh_token(db: Session, user_id: UUID) -> str:
+    user = get_user_by_id(db, user_id)
+    # error handling
+    if user is None:
+        raise ValueError("user not found")
+    
+    oauth = user.google_oauth
+    if not oauth or not oauth.get("refresh_token"):
+        raise ValueError("no refresh token found")
+    
+    response = httpx.post(
+        "https://oauth2.googleapis.com/token",
+        data={
+            "client_id": settings.GOOGLE_CLIENT_ID,
+            "client_secret": settings.GOOGLE_CLIENT_SECRET,
+            "refresh_token": oauth["refresh_token"],
+            "grant_type": "refresh_token",
+        },
+    )
+
+    if response.status_code != 200:
+        raise ValueError("token refresh failed")
+    
+    token = response.json()
+    expire = datetime.utcnow() + timedelta(seconds = token["expires_in"])
+    user.google_oauth = {
+        "access_token": token["access_token"],
+        "refresh_token": oauth["refresh_token"],
+        "expiry": expire.isoformat(),
+    }
+
+    try:
+        db.commit()
+        db.refresh(user)
+    except Exception:
+        raise
+    
+    return token["access_token"]
+
+def get_access_token(db: Session, user_id: UUID) -> str:
+    user = get_user_by_id(db, user_id)
+    # error handling
+    if user is None:
+        raise ValueError("user not found")
+    
+    oauth = user.google_oauth
+    if not oauth or not oauth.get("refresh_token"):
+        raise ValueError("no refresh token found")
+    
+    exire = datetime.fromisoformat(oauth["expiry"])
+    # refresh 10 minutes in advance
+    if datetime.utcnow() >= expire - timedelta(minutes=10):
+        return refresh_token(db, user_id)
+    
+    return oauth["access_token"]
