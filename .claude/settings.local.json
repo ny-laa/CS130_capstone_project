@@ -4,7 +4,8 @@
       "Bash(npm install *)",
       "Bash(npm run *)",
       "Bash(pip show *)",
-      "Bash(python -c \"import sys; sys.path.insert\\(0, '.'\\); from main import app; print\\('import ok'\\)\")"
+      "Bash(python -c \"import sys; sys.path.insert\\(0, '.'\\); from main import app; print\\('import ok'\\)\")",
+      "Bash(npx vite *)"
     ]
   }
 }

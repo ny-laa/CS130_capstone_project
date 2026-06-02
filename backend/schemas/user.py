@@ -15,6 +15,22 @@ class UserCreate(BaseModel):
     full_name: str | None = Field(default=None, max_length=120)
 
 
+class UserRegister(BaseModel):
+    name: str
+    email: str
+    password: str
+
+
+class UserLogin(BaseModel):
+    email: str
+    password: str
+
+
+class AuthResponse(BaseModel):
+    user: "UserResponse"
+    token: str
+
+
 class UserPreferencesUpdate(BaseModel):
     comm_style: CommStyle | None = None
     preferred_channel: PreferredChannel | None = None
@@ -30,7 +46,8 @@ class UserProfileUpdate(BaseModel):
 
 class UserResponse(BaseModel):
     id: UUID
-    phone_number: str
+    name: str | None
+    phone_number: str | None
     email: str | None
     full_name: str | None
     comm_style: CommStyle

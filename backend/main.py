@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from api.auth.routes import router as auth_router
 from api.contacts import router as contacts_router
 from api.family_members import router as family_members_router
 from api.providers import router as providers_router
@@ -25,11 +26,12 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["http://localhost:5173", "http://localhost:5174"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(family_members_router)
 app.include_router(contacts_router)
