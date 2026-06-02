@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 from uuid import uuid4
 from fastapi.testclient import TestClient
 
-from backend.models.datatypes import TaskStatus
+from models.datatypes import TaskStatus
 
 # shared fixtures
 
@@ -36,8 +36,8 @@ def make_user(calendar_token="fake-token"):
 
 def get_test_client():
     """Build a TestClient with DB dependency overridden to avoid a real Postgres connection."""
-    from backend.main import app
-    from backend.database import get_db
+    from main import app
+    from database import get_db
     mock_db = MagicMock()
     app.dependency_overrides[get_db] = lambda: mock_db
     return TestClient(app), mock_db
@@ -45,9 +45,9 @@ def get_test_client():
 
 # --- approve endpoint ---
 
-@patch("backend.api.tasks.get_user_by_id")
-@patch("backend.api.tasks.get_task")
-@patch("backend.api.tasks._orch")
+@patch("api.tasks.get_user_by_id")
+@patch("api.tasks.get_task_by_id")
+@patch("api.tasks._orch")
 def test_approve_resumes_task_and_sets_completed(mock_orch, mock_get_task, mock_get_user):
     """POST /api/tasks/{id}/approve → orchestrator resumes, DB task status set to COMPLETED."""
     client, mock_db = get_test_client()
@@ -69,7 +69,7 @@ def test_approve_resumes_task_and_sets_completed(mock_orch, mock_get_task, mock_
     assert call_kwargs["approved"] is True
 
 
-@patch("backend.api.tasks.get_task")
+@patch("api.tasks.get_task_by_id")
 def test_approve_404_when_task_not_found(mock_get_task):
     """POST /api/tasks/{id}/approve → 404 if task_id unknown."""
     client, _ = get_test_client()
@@ -79,7 +79,7 @@ def test_approve_404_when_task_not_found(mock_get_task):
     assert resp.status_code == 404
 
 
-@patch("backend.api.tasks.get_task")
+@patch("api.tasks.get_task_by_id")
 def test_approve_409_when_not_escalation_pending(mock_get_task):
     """POST /api/tasks/{id}/approve → 409 if task is not in ESCALATION_PENDING."""
     client, _ = get_test_client()
@@ -91,7 +91,7 @@ def test_approve_409_when_not_escalation_pending(mock_get_task):
 
 # --- deny endpoint ---
 
-@patch("backend.api.tasks.get_task")
+@patch("api.tasks.get_task_by_id")
 def test_deny_sets_task_failed(mock_get_task):
     """POST /api/tasks/{id}/deny → task status set to FAILED in DB."""
     client, _ = get_test_client()
@@ -104,7 +104,7 @@ def test_deny_sets_task_failed(mock_get_task):
     assert resp.json()["status"] == "FAILED"
 
 
-@patch("backend.api.tasks.get_task")
+@patch("api.tasks.get_task_by_id")
 def test_deny_404_when_task_not_found(mock_get_task):
     """POST /api/tasks/{id}/deny → 404 if task_id unknown."""
     client, _ = get_test_client()

@@ -14,7 +14,7 @@ from models.datatypes import TaskStatus, Tools
 from orchestrator.orchestrator import GOrchestrator
 from orchestrator.task_planner import PlanStep, StructuredTaskPlan
 from orchestrator.task_planner import Task as InMemoryTask
-from services.task_service import get_task, update_task_status, set_force_overlap
+from services.task_service import get_task_by_id, update_task_status
 from services.user_service import get_user_by_id
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
@@ -54,7 +54,7 @@ def _rebuild_in_memory_task(db_task) -> InMemoryTask:
 
 @router.post("/{task_id}/approve")
 def approve_task(task_id: UUID, db: Session = Depends(get_db)):
-    db_task = get_task(db, task_id)
+    db_task = get_task_by_id(db, task_id)
     if db_task is None:
         raise HTTPException(status_code=404, detail="Task not found")
     if db_task.status != TaskStatus.ESCALATION_PENDING:
@@ -75,9 +75,10 @@ def approve_task(task_id: UUID, db: Session = Depends(get_db)):
 
     _orch.resume_task_from_reply(task=in_memory, approved=True, tool_registry=tool_registry)
 
-    # persist the decision back to DB
+    # persist the decision back to DB; inline force_overlap since task_service doesn't have it yet
     if in_memory.force_overlap:
-        set_force_overlap(db, db_task)
+        db_task.force_overlap = True
+        db.commit()
     update_task_status(db, db_task, in_memory.status)
 
     return {"task_id": str(task_id), "status": in_memory.status}
@@ -85,7 +86,7 @@ def approve_task(task_id: UUID, db: Session = Depends(get_db)):
 
 @router.post("/{task_id}/deny")
 def deny_task(task_id: UUID, db: Session = Depends(get_db)):
-    db_task = get_task(db, task_id)
+    db_task = get_task_by_id(db, task_id)
     if db_task is None:
         raise HTTPException(status_code=404, detail="Task not found")
     if db_task.status != TaskStatus.ESCALATION_PENDING:
