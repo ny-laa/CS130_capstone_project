@@ -1,10 +1,20 @@
-#import all models so Base.metadata is populated for alembic autogen.
+# import all ORM models so SQLAlchemy can resolve relationships
+# Base.metadata includes all db tables
 
-# not needd here at test time! these importa are loaded by alembic eng.py directly
+from models.contact import Contact
+from models.family_member import FamilyMember
+from models.message import Message
+from models.preference import Preference
+from models.provider import Provider
+from models.task import Task
+from models.user import User
 
-# from backend.models.message import Message
-# from backend.models.preference import Preference
-# from backend.models.task import Task
-# from backend.models.user import User
-
-# __all__ = ["User", "Task", "Message", "Preference"]
+__all__ = [
+    "User",
+    "Task",
+    "Message",
+    "Preference",
+    "FamilyMember",
+    "Contact",
+    "Provider",
+]

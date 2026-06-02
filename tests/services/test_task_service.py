@@ -1,58 +1,217 @@
+# basic mock tests for task service db helpers
+
+from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
-from backend.models.datatypes import TaskStatus
+import pytest
+
+from models.datatypes import TaskStatus, TaskType, Tools
+from models.task import Task as DBTask
+from services.task_service import (
+    _serialize_plan_steps,
+    create_task,
+    get_task_by_id,
+    get_tasks_by_status,
+    get_tasks_for_user,
+    mark_task_complete,
+    set_escalation_pending,
+    update_task_status,
+)
 
 
-def make_db_task(status=TaskStatus.ESCALATION_PENDING):
-    task = MagicMock()
-    task.id = uuid4()
-    task.user_id = uuid4()
-    task.status = status
-    task.force_overlap = False
-    return task
-
-
-def test_get_task_returns_task():
-    #get_task queries by id and returns the matching row.
-    from backend.services.task_service import get_task
+def test_create_task():
     db = MagicMock()
-    expected = make_db_task()
-    db.query.return_value.filter.return_value.first.return_value = expected
+    user_id = uuid4()
 
-    result = get_task(db, expected.id)
-    assert result is expected
+    result = create_task(
+        db=db,
+        user_id=user_id,
+        task_type="reminder",
+        description="Remind parent to pick up Radhika at 3pm",
+        plan_steps=[
+            {
+                "tool": "sms_tool",
+                "params": {"message": "Pick up Radhika"},
+                "status": "PENDING",
+            }
+        ],
+    )
 
+    assert isinstance(result, DBTask)
+    assert result.user_id == user_id
+    assert result.type == "reminder"
+    assert result.description == "Remind parent to pick up Radhika at 3pm"
+    assert result.status == TaskStatus.PENDING
 
-def test_get_task_returns_none_when_not_found():
-    #get_task returns None for unknown task_id — caller handles the 404.
-    from backend.services.task_service import get_task
-    db = MagicMock()
-    db.query.return_value.filter.return_value.first.return_value = None
-    # use a random UUID that's not supposed to be fournd 
-    result = get_task(db, uuid4())
-    assert result is None
+    assert result.plan_steps == [
+        {
+            "tool": "sms_tool",
+            "params": {"message": "Pick up Radhika"},
+            "status": "PENDING",
+        }
+    ]
 
-
-def test_update_task_status_commits_and_refreshes():
-    #update_task_status sets status, commits, and refreshes the row.
-    from backend.services.task_service import update_task_status
-    db = MagicMock()
-    task = make_db_task(status=TaskStatus.ESCALATION_PENDING)
-
-    update_task_status(db, task, TaskStatus.COMPLETED)
-    # see if DB gest updated by us
-    assert task.status == TaskStatus.COMPLETED
+    db.add.assert_called_once_with(result)
     db.commit.assert_called_once()
-    db.refresh.assert_called_once_with(task)
+    db.refresh.assert_called_once_with(result)
 
 
-def test_set_force_overlap_flags_task():
-    #set_force_overlap marks the task as overlap-approved and persists
-    from backend.services.task_service import set_force_overlap
+def test_create_task_rejects_empty_description():
     db = MagicMock()
-    task = make_db_task()
-    assert task.force_overlap is False
 
-    set_force_overlap(db, task) # see it it actually works 
-    assert task.force_overlap is True
+    with pytest.raises(ValueError, match="Task description cannot be empty"):
+        create_task(
+            db=db,
+            user_id=uuid4(),
+            task_type="reminder",
+            description="   ",
+        )
+
+    db.add.assert_not_called()
+    db.commit.assert_not_called()
+
+
+def test_serialize_plan_steps_handles_enum_values():
+    result = _serialize_plan_steps(
+        [
+            {
+                "tool": Tools.SMS_TOOL,
+                "params": {"message": "Hello"},
+                "status": TaskStatus.PENDING,
+            }
+        ]
+    )
+
+    assert result == [
+        {
+            "tool": "sms_tool",
+            "params": {"message": "Hello"},
+            "status": "PENDING",
+        }
+    ]
+
+
+def test_get_task_by_id():
+    db = MagicMock()
+    task_id = uuid4()
+    fake_task = MagicMock()
+
+    db.get.return_value = fake_task
+
+    result = get_task_by_id(db, task_id)
+
+    assert result == fake_task
+    db.get.assert_called_once_with(DBTask, task_id)
+
+
+def test_get_tasks_for_user():
+    db = MagicMock()
+    user_id = uuid4()
+    fake_tasks = [MagicMock(), MagicMock()]
+
+    query = db.query.return_value
+    filtered = query.filter.return_value
+    ordered = filtered.order_by.return_value
+    limited = ordered.limit.return_value
+    limited.all.return_value = fake_tasks
+
+    result = get_tasks_for_user(
+        db=db,
+        user_id=user_id,
+        limit=10,
+    )
+
+    assert result == fake_tasks
+    db.query.assert_called_once_with(DBTask)
+    ordered.limit.assert_called_once_with(10)
+    limited.all.assert_called_once()
+
+
+def test_get_tasks_by_status():
+    db = MagicMock()
+    fake_tasks = [MagicMock()]
+
+    query = db.query.return_value
+    filtered = query.filter.return_value
+    ordered = filtered.order_by.return_value
+    ordered.all.return_value = fake_tasks
+
+    result = get_tasks_by_status(
+        db=db,
+        status="PENDING",
+    )
+
+    assert result == fake_tasks
+    db.query.assert_called_once_with(DBTask)
+    ordered.all.assert_called_once()
+
+
+@patch("services.task_service.get_task_by_id")
+def test_update_task_status(mock_get_task_by_id):
+    db = MagicMock()
+    task_id = uuid4()
+    fake_task = MagicMock()
+
+    mock_get_task_by_id.return_value = fake_task
+
+    result = update_task_status(
+        db=db,
+        task_id=task_id,
+        status="IN_PROGRESS",
+    )
+
+    assert result == fake_task
+    assert fake_task.status == TaskStatus.IN_PROGRESS
     db.commit.assert_called_once()
+    db.refresh.assert_called_once_with(fake_task)
+
+
+@patch("services.task_service.get_task_by_id")
+def test_set_escalation_pending(mock_get_task_by_id):
+    db = MagicMock()
+    task_id = uuid4()
+    fake_task = MagicMock()
+
+    mock_get_task_by_id.return_value = fake_task
+
+    before_call = datetime.now(timezone.utc)
+
+    result = set_escalation_pending(
+        db=db,
+        task_id=task_id,
+        timeout_minutes=30,
+    )
+
+    after_call = datetime.now(timezone.utc)
+
+    assert result == fake_task
+    assert fake_task.status == TaskStatus.ESCALATION_PENDING
+    assert fake_task.escalation_deadline is not None
+    assert before_call < fake_task.escalation_deadline
+    assert fake_task.escalation_deadline > after_call
+
+    db.commit.assert_called_once()
+    db.refresh.assert_called_once_with(fake_task)
+
+
+@patch("services.task_service.get_task_by_id")
+def test_mark_task_complete(mock_get_task_by_id):
+    db = MagicMock()
+    task_id = uuid4()
+    fake_task = MagicMock()
+    fake_task.escalation_deadline = datetime.now(timezone.utc)
+
+    mock_get_task_by_id.return_value = fake_task
+
+    result = mark_task_complete(
+        db=db,
+        task_id=task_id,
+    )
+
+    assert result == fake_task
+    assert fake_task.status == TaskStatus.COMPLETED
+    assert fake_task.escalation_deadline is None
+
+    db.commit.assert_called_once()
+    db.refresh.assert_called_once_with(fake_task)
+

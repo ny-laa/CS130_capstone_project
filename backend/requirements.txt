@@ -34,6 +34,10 @@ python-multipart
 pydantic
 pydantic-settings
 
+#auth
+passlib[bcrypt]
+python-jose[cryptography]
+
 #testing
 pytest
 httpx  #fastapi TestClient transport

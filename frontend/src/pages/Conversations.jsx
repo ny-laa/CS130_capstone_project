@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { getTaskHistory } from '../api';
 import MessageBubble from '../components/MessageBubble';
 import VoiceTranscript from '../components/VoiceTranscript';
+import { useTasks } from '../context/TaskContext';
 
 // [GenAI Use] LLM Response Start
 // Fetches conversations on mount, renders MessageBubble list
@@ -10,6 +11,16 @@ import VoiceTranscript from '../components/VoiceTranscript';
 // for one-time fetch on mount:
 // https://react.dev/reference/react/useEffect#fetching-data-with-effects
 // Identified missing loading/error state, needs improvement.
+
+// [GenAI Use] LLM Response Start UPDATE
+// Added a "From Chat" section at the top for context tasks that
+// reached Completed or Failed status.
+// [GenAI Use] LLM Response End
+// [GenAI Use] Reflection: Filters TaskContext for tasks with
+// Completed or Failed status and shows them at the top as a
+// separate section. Good way to see the history of what the AI
+// actually did.
+
 
 const STATUS_COLORS = {
   COMPLETED: '#10b981',
@@ -85,18 +96,61 @@ function TaskHistoryItem({ task }) {
   );
 }
 
+const CHAT_STATUS_COLORS = { COMPLETED: '#10b981', FAILED: '#6b7280' };
+const CHAT_STATUS_LABELS = { COMPLETED: 'Completed', FAILED: 'Failed' };
+
+function ChatTaskHistoryItem({ task }) {
+  const { description, type, status, createdAt, summary } = task;
+  return (
+    <div className="history-item">
+      <div className="history-item-header" style={{ cursor: 'default' }}>
+        <div className="history-item-meta">
+          <p className="history-item-description">{description}</p>
+          <div className="history-item-details">
+            <span className="badge badge-type">{type}</span>
+            <span className="badge badge-status" style={{ background: CHAT_STATUS_COLORS[status] }}>
+              {CHAT_STATUS_LABELS[status]}
+            </span>
+            <span className="badge badge-channel">💬 Chat</span>
+          </div>
+          <p className="history-item-timestamps">
+            {new Date(createdAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+            {summary && ` · ${summary}`}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function TaskHistory() {
-  const [tasks, setTasks] = useState([]);
+  const [history, setHistory] = useState([]);
+  const { tasks } = useTasks();
 
   useEffect(() => {
-    getTaskHistory().then(setTasks);
+    getTaskHistory().then(setHistory);
   }, []);
+
+  const chatCompleted = tasks.filter(
+    (t) => (t.status === 'COMPLETED' || t.status === 'FAILED') && t.id.startsWith('chat-task-')
+  );
 
   return (
     <div className="page">
       <h1 className="page-title">Task History</h1>
+      {chatCompleted.length > 0 && (
+        <>
+          <h2 className="section-title">From Chat</h2>
+          <div className="history-list" style={{ marginBottom: 24 }}>
+            {chatCompleted.map((t) => (
+              <ChatTaskHistoryItem key={t.id} task={t} />
+            ))}
+          </div>
+          <h2 className="section-title">All History</h2>
+        </>
+      )}
       <div className="history-list">
-        {tasks.map((t) => (
+        {history.map((t) => (
           <TaskHistoryItem key={t.id} task={t} />
         ))}
       </div>

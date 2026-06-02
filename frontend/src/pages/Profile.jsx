@@ -1,15 +1,20 @@
 import { useState, useEffect } from 'react';
-import { getUser, saveUser } from '../api';
+import { useNavigate } from 'react-router-dom';
+import { getUser as loadUser, setUser as persistUser, isLoggedIn } from '../auth';
 import Toggle from '../components/Toggle';
 import TimePicker from '../components/TimePicker';
-
+import Banner from '../components/Banner';
 // [GenAI Use] LLM Response Start
-// User profile with preferences, Toggle/TimePicker, family members
+// Reads from localStorage via getUser(), redirects to /signup if not 
+// logged in, shows dismissable banner on first post-onboarding visit,
+// Save logs and persists to localStorage
 // [GenAI Use] LLM Response End
-// [GenAI Use] Reflection: Verified computed property key pattern 
-// ([key]: val) is correct immutable state update in React:
-// https://react.dev/learn/updating-objects-in-state
-// Date.now() ID is temporary, will use backend IDs when API is live.
+// [GenAI Use] Reflection: The redirect to /signup when isLoggedIn() 
+// returns false is a basic auth guard - prevents unauthenticated access.
+// Will need to be replaced with a real auth check when backend sessions 
+// are implemented. Save currently only persists to localStorage, not 
+// the backend - noted as a gap to address when PATCH /api/users/{id}/
+// preferences is fully connected.
 
 const DAYS = [
   { key: 'mon', label: 'M' },
@@ -22,20 +27,21 @@ const DAYS = [
 ];
 
 export default function Profile() {
+  const navigate = useNavigate();
   const [user, setUser] = useState(null);
   const [prefs, setPrefs] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [newMember, setNewMember] = useState({ name: '', relation: '' });
+  const [newMember, setNewMember] = useState({ name: '', relation: '', phone_number: '' });
   const [newContact, setNewContact] = useState({ name: '', role: '', org: '', phone: '' });
   const [newProvider, setNewProvider] = useState({ name: '', specialty: '', practice: '' });
 
   useEffect(() => {
-    getUser().then((u) => {
-      setUser(u);
-      setPrefs({ ...u.preferences });
-    });
-  }, []);
+    if (!isLoggedIn()) { navigate('/signup', { replace: true }); return; }
+    const u = loadUser();
+    setUser(u);
+    setPrefs({ ...u.preferences });
+  }, [navigate]);
 
   function setPref(key, val) {
     setPrefs((p) => ({ ...p, [key]: val }));
@@ -53,7 +59,7 @@ export default function Profile() {
   function addMember() {
     if (!newMember.name.trim()) return;
     setUser((u) => ({ ...u, familyMembers: [...u.familyMembers, { id: Date.now(), ...newMember }] }));
-    setNewMember({ name: '', relation: '' });
+    setNewMember({ name: '', relation: '', phone_number: '' });
   }
   function removeMember(id) {
     setUser((u) => ({ ...u, familyMembers: u.familyMembers.filter((m) => m.id !== id) }));
@@ -77,9 +83,17 @@ export default function Profile() {
     setUser((u) => ({ ...u, providers: u.providers.filter((p) => p.id !== id) }));
   }
 
+  function dismissBanner() {
+    const updated = { ...user, bannerDismissed: true };
+    setUser(updated);
+    persistUser(updated);
+  }
+
   async function handleSave() {
     setSaving(true);
-    await saveUser({ ...user, preferences: prefs });
+    const updated = { ...user, preferences: prefs };
+    console.log('Save payload:', updated);
+    persistUser(updated);
     setSaving(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
@@ -90,6 +104,13 @@ export default function Profile() {
   return (
     <div className="page">
       <h1 className="page-title">Profile & Preferences</h1>
+
+      {user.bannerDismissed === false && (
+        <Banner
+          message="G is active — save this number: (555) 010-GAAI"
+          onDismiss={dismissBanner}
+        />
+      )}
 
       {/* ─── Your Info ─────────────────────────────────── */}
       <section className="card">
@@ -117,6 +138,7 @@ export default function Profile() {
               <li key={m.id} className="member-item">
                 <span>
                   {m.name} <span className="member-relation">({m.relation})</span>
+                  {m.phone_number && <span className="contact-phone"> · {m.phone_number}</span>}
                 </span>
                 <button className="btn-remove" onClick={() => removeMember(m.id)}>✕</button>
               </li>
@@ -136,6 +158,14 @@ export default function Profile() {
             placeholder="Relation"
             value={newMember.relation}
             onChange={(e) => setNewMember((m) => ({ ...m, relation: e.target.value }))}
+            onKeyDown={(e) => e.key === 'Enter' && addMember()}
+          />
+          <input
+            type="tel"
+            className="text-input"
+            placeholder="Phone (optional)"
+            value={newMember.phone_number}
+            onChange={(e) => setNewMember((m) => ({ ...m, phone_number: e.target.value }))}
             onKeyDown={(e) => e.key === 'Enter' && addMember()}
           />
           <button className="btn btn-primary" onClick={addMember}>Add</button>

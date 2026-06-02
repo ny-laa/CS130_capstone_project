@@ -1,13 +1,16 @@
-import { useState, useEffect } from 'react';
-import { getTasks } from '../api';
 import TaskCard from '../components/TaskCard';
+import { useTasks } from '../context/TaskContext';
+
+// [GenAI Use] LLM Response Start
+// Now reads from TaskContext instead of mock API so chat-created
+// tasks show up instantly.
+// [GenAI Use] LLM Response End
+// [GenAI Use] Reflection: This was the key change to make chat and
+// tasks feel connected. Before this, tasks page used its own mock
+// data. Now it shares the same source of truth as the chat sidebar.
 
 export default function Tasks() {
-  const [tasks, setTasks] = useState([]);
-
-  useEffect(() => {
-    getTasks().then(setTasks);
-  }, []);
+  const { tasks } = useTasks();
 
   return (
     <div className="page">
