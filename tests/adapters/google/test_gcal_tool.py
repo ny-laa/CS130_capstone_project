@@ -1,28 +1,34 @@
-#note: these tests are basic for now, will better test the logic after oauth + database is sett up 
+#note: these tests are basic for now, will better test the logic after oauth + database is set up 
 from unittest.mock import MagicMock, patch
 import pytest
-from backend.adapters.google.calendar_tool import CalendarTool
+from adapters.google.calendar_tool import CalendarTool
+from uuid import uuid4
 
-def test_execute_requires_access_token(): #test to make sure error happpens if access token isn't there
+@patch("adapters.google.calendar_tool.get_access_token")
+def test_execute_requires_user_id(mock_get_token):
     tool = CalendarTool()
-    with pytest.raises(ValueError, match="access_token is required"):
+    db = MagicMock()
+    with pytest.raises(ValueError, match="user_id needed"):
         tool.execute({
             "operation": "read",
             "time_min": "2026-05-24T00:00:00Z",
             "time_max": "2026-05-25T00:00:00Z",
-        })
+        }, db)
 
 
-def test_execute_routes_read_operation(): #tests the flow of exeucte func w/ read op
+@patch("adapters.google.calendar_tool.get_access_token")
+def test_execute_routes_read_operation(mock_get_token):
+    mock_get_token.return_value = "fake-token"
     tool = CalendarTool()
     tool.read = MagicMock(return_value=[])
+    db = MagicMock()
 
     result = tool.execute({
-        "operation": "read", #later can test other ops too 
-        "access_token": "fake-token",
+        "operation": "read",
+        "user_id": uuid4(),
         "time_min": "2026-05-24T00:00:00Z",
         "time_max": "2026-05-25T00:00:00Z",
-    })
+    }, db)
 
     assert result == []
     tool.read.assert_called_once_with(
@@ -34,8 +40,9 @@ def test_execute_routes_read_operation(): #tests the flow of exeucte func w/ rea
     )
 
 
-@patch("backend.adapters.google.calendar_tool.build")
-def test_read_simplifies_events(mock_build):
+@patch("adapters.google.calendar_tool.Credentials")
+@patch("adapters.google.calendar_tool.build")
+def test_read_simplifies_events(mock_build, mock_creds):
     #mocks the gcal service chain =>  service.events().list(...).execute()
     fake_service = MagicMock()
     mock_build.return_value = fake_service
@@ -72,8 +79,9 @@ def test_read_simplifies_events(mock_build):
         }
     ]
 
-@patch("backend.adapters.google.calendar_tool.build")
-def test_check_availability_returns_busy_window(mock_build):
+@patch("adapters.google.calendar_tool.Credentials")
+@patch("adapters.google.calendar_tool.build")
+def test_check_availability_returns_busy_window(mock_build, mock_creds):
     fake_service = MagicMock()
     mock_build.return_value = fake_service
 
@@ -109,8 +117,9 @@ def test_check_availability_returns_busy_window(mock_build):
     }
 
 
-@patch("backend.adapters.google.calendar_tool.build")
-def test_write_creates_event(mock_build):
+@patch("adapters.google.calendar_tool.Credentials")
+@patch("adapters.google.calendar_tool.build")
+def test_write_creates_event(mock_build, mock_creds):
     fake_service = MagicMock()
     mock_build.return_value = fake_service
 
