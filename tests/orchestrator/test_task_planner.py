@@ -378,7 +378,7 @@ def test_create_task_plan_raises_after_max_retries():
         # give up after max try.. go to human support. 
 
 
-# new test: live to calude to see if we cehcks teh right avalibailtiy from a calendar. 
+# new test: live to claude to see if we checks teh right availibility from a calendar. 
 def test_live_calendar_update_plan_includes_availability_check():
     if not os.getenv("ANTHROPIC_API_KEY"):
         pytest.skip("no key")
