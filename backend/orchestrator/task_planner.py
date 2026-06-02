@@ -1,5 +1,3 @@
-# takes the raw llm output and converts it into ordered plan_steps
-# each step is like {tool, params, status} that the worker can execute
 from backend.models.datatypes import TaskType, TaskStatus, Tools
 from enum import Enum
 import json
@@ -32,6 +30,7 @@ class PlanStep:
         self.tool = tool
         self.params= params
         self.status= status
+        self.result = None  # populated by TaskRunner after adapter.execute(), only False if we deliberately set it when step is unavaliable. 
 
     def __repr__(self):
         # print better when debugging with PlanStep objects
@@ -199,7 +198,7 @@ class TaskPlanner:
         # examples for how the planner llm would respond to intents. shows the format
         examples = {
             TaskType.REMINDER: '{"task_type":"reminder","description":"Pick up kids at 3pm","plan_steps":[{"tool":"user_pref_tool","params":{"user_id":"abc"},"status":"PENDING"},{"tool":"script_tool","params":{"title":"Pick up kids","time":"3pm","context":"","location":"school"},"status":"PENDING"},{"tool":"sms_tool","params":{"message":"Reminder: pick up kids at 3pm"},"status":"PENDING"}],"response_message":"Got it! Reminding you at 3pm."}',
-            TaskType.CALENDAR_UPDATE: '{"task_type":"calendar_update","description":"Move standup to 4pm","plan_steps":[{"tool":"calendar_tool","params":{"action":"update","event":"standup","new_time":"4pm"},"status":"PENDING"}],"response_message":"Done! Standup moved to 4pm."}',
+            TaskType.CALENDAR_UPDATE: '{"task_type":"calendar_update","description":"Move standup to 4pm","plan_steps":[{"tool":"calendar_tool","params":{"operation":"check_availability","start_time":"<ISO>","end_time":"<ISO>"},"status":"PENDING"},{"tool":"calendar_tool","params":{"operation":"write","action":"update","event":"standup","new_time":"4pm"},"status":"PENDING"}],"response_message":"Let me check your calendar first, then move the standup."}',
             TaskType.INFORMATION_REQUEST: '{"task_type":"information_request","description":"Find latest email from Sarah","plan_steps":[{"tool":"gmail_tool","params":{"query":"from:Sarah","max_results":1},"status":"PENDING"},{"tool":"sms_tool","params":{"message":"<result>"},"status":"PENDING"}],"response_message":"Looking it up now!"}',
             TaskType.MORNING_DIGEST: '{"task_type":"morning_digest","description":"Daily morning briefing","plan_steps":[{"tool":"calendar_tool","params":{"date":"today","max_events":10},"status":"PENDING"},{"tool":"gmail_tool","params":{"query":"is:unread","max_results":5},"status":"PENDING"},{"tool":"sms_tool","params":{"message":"<digest>"},"status":"PENDING"}],"response_message":"Good morning! Here is your digest."}',
         }
@@ -235,10 +234,13 @@ class TaskPlanner:
             """
         elif intent ==TaskType.CALENDAR_UPDATE:
             return """
-            You are a task planner for a personal assistant. The user wants to create, move, reschedule, or delete a calendar event. This is NOT a lookup - it is an action that changes the calendar. 
+            You are a task planner for a personal assistant. The user wants to create, move, reschedule, or delete a calendar event. This is NOT a lookup — it is an action that changes the calendar.
 
-            Avaliable tools:
-            calendar_tool — write/update/delete a calendar event
+            IMPORTANT: For any write (create/update/move), ALWAYS include a check_availability step FIRST. The worker will pause and ask the parent if there is a conflict — do NOT skip this step.
+
+            Available tools (use in this order for writes):
+            1. calendar_tool with operation "check_availability" — check if the time slot is free
+            2. calendar_tool with operation "write" — create/update/move/delete the event
 
             Return ONLY valid JSON in this exact shape:
 
@@ -246,17 +248,10 @@ class TaskPlanner:
                 "task_type": "calendar_update",
                 "description": "<one-line summary>",
                 "plan_steps": [
-                    {
-                    "tool": "calendar_tool", 
-                    "params": {
-                        "action": "update", 
-                        "event": "...", 
-                        "new_time": "..."}, 
-                        "status": "PENDING"
-                    }
+                    {"tool": "calendar_tool", "params": {"operation": "check_availability", "start_time": "<ISO 8601>", "end_time": "<ISO 8601>"}, "status": "PENDING"},
+                    {"tool": "calendar_tool", "params": {"operation": "write", "action": "create", "summary": "...", "start_time": "<ISO 8601>", "end_time": "<ISO 8601>"}, "status": "PENDING"}
                 ],
-                "response_message": "<friendly confirmation to
-                send back>"
+                "response_message": "<friendly confirmation to send back>"
             }
             """
         elif intent == TaskType.INFORMATION_REQUEST:

@@ -27,7 +27,11 @@ class TaskRunner:
             if adapter is None:
                 raise KeyError(f"No adapter registered for tool:{step.tool}") # will add catch in orchestrator or upper layer. maybe we shoud pass control more nicely.
             if adapter:
-                adapter.execute(step.params)
+                result = adapter.execute(step.params)
+                step.result = result
+                if self.escalation.step_result_needs_escalation(step, result or {}):
+                    task.status = TaskStatus.ESCALATION_PENDING
+                    return
             step.status = TaskStatus.COMPLETED
             task.task_plan.to_next_step() # carry on 
 

@@ -377,3 +377,24 @@ def test_create_task_plan_raises_after_max_retries():
         planner.create_task_plan("Remind me to call Lucy at 3pm", intent="reminder")
         # give up after max try.. go to human support. 
 
+
+# new test: live to calude to see if we cehcks teh right avalibailtiy from a calendar. 
+def test_live_calendar_update_plan_includes_availability_check():
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        pytest.skip("no key")
+    planner = TaskPlanner(ClaudeAdapter())
+    plan = planner.create_task_plan("Add picking up Mary from school to my calendar at 5pm tomorrow", intent="calendar_update")
+    print("live calendar_update conflict-check output:")
+    print("type:", plan.task_type)
+    print("steps:", plan.plan_steps)
+    print("response:", plan.response_message)
+
+    assert plan.task_type == TaskType.CALENDAR_UPDATE
+    assert len(plan.plan_steps) >= 2  # must have at least check + write
+
+    tools_in_plan = [str(s.tool) for s in plan.plan_steps]
+    assert tools_in_plan[0] == "calendar_tool"  # check step must be first
+
+    first_step_params = plan.plan_steps[0].params
+    assert first_step_params.get("operation") == "check_availability"  # must be a check, not a write
+
