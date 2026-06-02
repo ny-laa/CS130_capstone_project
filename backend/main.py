@@ -10,6 +10,9 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from api.auth.routes import router as auth_router
+from api.contacts import router as contacts_router
+from api.family_members import router as family_members_router
+from api.providers import router as providers_router
 from api.users import router as users_router
 from api.webhooks import call, sms
 from config import settings
@@ -30,6 +33,9 @@ app.add_middleware(
 
 app.include_router(auth_router)
 app.include_router(users_router)
+app.include_router(family_members_router)
+app.include_router(contacts_router)
+app.include_router(providers_router)
 app.include_router(sms.router)
 app.include_router(call.router)
 

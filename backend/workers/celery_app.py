@@ -17,6 +17,7 @@
 # a follow-up when persistence + the JSON->Task conversion are ready.
 
 from celery import Celery
+from celery.schedules import crontab
 
 from config import settings
 
@@ -24,15 +25,26 @@ app = Celery(
     "g",
     broker=settings.CELERY_BROKER_URL,
     backend=settings.CELERY_RESULT_BACKEND,
-    include=["workers.tasks.notifications"],
+    include=[
+        "workers.tasks.notifications",
+        "workers.tasks.morning_digest",
+    ],
 )
 
 app.conf.update(
     task_serializer="json",
     accept_content=["json"],
     result_serializer="json",
-    timezone="UTC",
+
+    # prototype digest schedule uses LA time for now, later can expand for user specific timezones + digest times
+    timezone="America/Los_Angeles",
     enable_utc=True,
+    beat_schedule={
+    "send-morning-digests-every-day": {
+        "task": "send_morning_digests",
+        "schedule": crontab(hour=8, minute=0),
+    },
+},
 )
 
 

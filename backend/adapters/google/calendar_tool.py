@@ -6,8 +6,7 @@
 from typing import Any
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
-from backend.adapters.base import BaseToolAdapter
-
+from adapters.base import BaseToolAdapter
 
 class CalendarTool(BaseToolAdapter):
     def __init__(self):

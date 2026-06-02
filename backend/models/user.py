@@ -49,6 +49,15 @@ class User(Base):
     preferences = relationship(
         "Preference", back_populates="user", cascade="all, delete-orphan"
     )
+    family_members = relationship(
+        "FamilyMember", back_populates="user", cascade="all, delete-orphan"
+    )
+    contacts = relationship(
+        "Contact", back_populates="user", cascade="all, delete-orphan"
+    )
+    providers = relationship(
+        "Provider", back_populates="user", cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
         return f"<User id={self.id} phone={self.phone_number}>"
