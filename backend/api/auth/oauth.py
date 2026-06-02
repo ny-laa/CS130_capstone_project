@@ -66,16 +66,16 @@ async def google_oauth(
 
     # add user to database
     if not user:
-        user = create_user(db, phone_number=f"pending_{email}", email=email, full_name=name)
+        user = create_user(db, phone_number=f"pending_{email}", email=email, name=name)
 
     # save tokens and expire in 1 hour
     expire = datetime.utcnow() + timedelta(seconds=token["expires_in"])
     save_google_oauth(
         db,
         user_id=user.id,
-        "access_token"= token["access_token"],
-        "refresh_token"= token.get("refresh_token"),
-        "expiry"= expire.isoformat()
+        access_token= token["access_token"],
+        refresh_token= token.get("refresh_token"),
+        expiry= expire.isoformat()
     )
     
     return RedirectResponse(url="http://localhost:5173?auth=success")

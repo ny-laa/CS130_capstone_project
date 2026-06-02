@@ -32,7 +32,7 @@ def create_user(
     db: Session,
     phone_number: str,
     email: str | None = None,
-    full_name: str | None = None,
+    name: str | None = None,
     comm_style: CommStyle = CommStyle.BRIEF, #set to brieff for now
     preferred_channel: PreferredChannel = PreferredChannel.SMS,
     blocked_windows: dict | list | None = None,
@@ -51,7 +51,7 @@ def create_user(
     user = User(
         phone_number=phone_number,
         email=email,
-        full_name=full_name,
+        name=name,
         comm_style=comm_style,
         preferred_channel=preferred_channel,
         blocked_windows=blocked_windows,
@@ -78,7 +78,7 @@ def create_user(
 def update_user_profile(
     db: Session,
     user_id: UUID,
-    full_name: str | None = None,
+    name: str | None = None,
     email: str | None = None,
 ) -> User:
     #patch for the "Your Info" section of the profile page.
@@ -95,8 +95,8 @@ def update_user_profile(
             raise ValueError("A user with this email already exists!!")
         user.email = email
 
-    if full_name is not None:
-        user.full_name = full_name
+    if name is not None:
+        user.name = name
 
     try:
         db.commit()
@@ -250,7 +250,7 @@ def get_access_token(db: Session, user_id: UUID) -> str:
     if not oauth or not oauth.get("refresh_token"):
         raise ValueError("no refresh token found")
     
-    exire = datetime.fromisoformat(oauth["expiry"])
+    expire = datetime.fromisoformat(oauth["expiry"])
     # refresh 10 minutes in advance
     if datetime.utcnow() >= expire - timedelta(minutes=10):
         return refresh_token(db, user_id)

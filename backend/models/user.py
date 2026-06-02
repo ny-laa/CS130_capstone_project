@@ -38,7 +38,7 @@ class User(Base):
     #[{start_time, end_time}] recurring blocks
     blocked_windows: Mapped[dict | list | None] = mapped_column(JSONB, nullable=True)
     #TODO encrypt before storing real tokens
-    google_oauth: mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    google_oauth: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
