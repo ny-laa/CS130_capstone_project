@@ -17,8 +17,10 @@ import { clearUser } from '../auth';
 // when count is 0. Checked the chat nav item highlights correctly
 // when on the /chat route.
 
+export default function NavBar() {
   const NAV_ITEMS = [
     { to: '/tasks', label: 'Tasks', icon: '✓' },
+    { to: '/chat', label: 'Chat', icon: '💬' },
     { to: '/conversations', label: 'History', icon: '◎' },
     { to: '/profile', label: 'Profile', icon: '⊙' },
   ];

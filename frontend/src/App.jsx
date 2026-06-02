@@ -1,54 +1,40 @@
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import NavBar from './components/NavBar';
+import { TaskProvider } from './context/TaskContext';
+import { isLoggedIn } from './auth';
 import Profile from './pages/Profile';
 import Conversations from './pages/Conversations';
 import Tasks from './pages/Tasks';
+import Chat from './pages/Chat';
 import Register from './pages/Register';
 import SignUp from './pages/SignUp';
+import SignIn from './pages/SignIn';
 import Step1Family from './pages/Onboard/Step1Family';
 import Step2Preferences from './pages/Onboard/Step2Preferences';
 
-// [GenAI Use] LLM Response Start
-// New routes added for /signup, /onboard/step1, /onboard/step2.
-// NavBar hidden on /signup and /onboard/* paths.
-// [GenAI Use] LLM Response End
-// [GenAI Use] Reflection: NavBar hiding uses location.pathname check
-// which is the standard pattern for route-based layout control in 
-// React Router. Confirmed existing routes (/tasks, /conversations, 
-// /profile) were not broken. Verified /onboard/* wildcard correctly 
-// hides NavBar on both step1 and step2.
-// Consulted: https://reactrouter.com/en/main/hooks/use-location
+const NO_NAV_PATHS = ['/signup', '/signin', '/onboard'];
 
-// [GenAI Use] LLM Response Start UPDATE
-// TaskProvider now wraps the whole app. /chat route added.
-// main-content--chat class applied on chat route for full height layout.
-// [GenAI Use] LLM Response End
-// [GenAI Use] Reflection: Wrapping the whole app in TaskProvider means
-// every page can access task state. The chat-specific CSS class removes
-// the normal page padding so the chat fills the full height. Checked
-// existing routes still work.
-
-
-const AUTH_PATHS = ['/signup', '/onboard'];
+function RequireAuth({ children }) {
+  const { pathname } = useLocation();
+  if (!isLoggedIn()) return <Navigate to={`/signin?next=${encodeURIComponent(pathname)}`} replace />;
+  return children;
+}
 
 function AppContent() {
   const { pathname } = useLocation();
-  const hideNav = AUTH_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'));
+  const hideNav = NO_NAV_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'));
   const isChatPage = pathname === '/chat';
 
   return (
     <div className={hideNav ? '' : 'app-layout'}>
       {!hideNav && <NavBar />}
-      <main
-        className={
-          hideNav ? '' : `main-content${isChatPage ? ' main-content--chat' : ''}`
-        }
-      >
+      <main className={hideNav ? '' : `main-content${isChatPage ? ' main-content--chat' : ''}`}>
         <Routes>
           <Route path="/" element={<Navigate to="/tasks" replace />} />
           <Route path="/signup" element={<SignUp />} />
-          <Route path="/onboard/step1" element={<Step1Family />} />
-          <Route path="/onboard/step2" element={<Step2Preferences />} />
+          <Route path="/signin" element={<SignIn />} />
+          <Route path="/onboard/step1" element={<RequireAuth><Step1Family /></RequireAuth>} />
+          <Route path="/onboard/step2" element={<RequireAuth><Step2Preferences /></RequireAuth>} />
           <Route path="/register" element={<Register />} />
           <Route path="/tasks" element={<Tasks />} />
           <Route path="/chat" element={<Chat />} />

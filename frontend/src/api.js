@@ -1,3 +1,42 @@
+import { getToken } from './auth';
+
+const API_BASE = 'http://localhost:8000';
+
+function authHeaders(extra = {}) {
+  const token = getToken();
+  return {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...extra,
+  };
+}
+
+async function apiFetch(path, options = {}) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers: authHeaders(options.headers),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function register(name, email, password) {
+  return apiFetch('/api/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({ name, email, password }),
+  });
+}
+
+export async function login(email, password) {
+  return apiFetch('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  });
+}
+
 // All API calls go here. Mocked for now — replace individual functions with real fetch calls when backend is ready.
 // [GenAI Use] LLM Response Start
 // Added sendMessage() which calls Anthropic API or falls back to
@@ -10,6 +49,63 @@
 // returns task blocks for keywords like reminder, schedule, escalation
 // so the UI can be tested without a real API key.
 // Consulted: https://docs.anthropic.com/en/api/messages
+
+const MOCK_RESPONSES = [
+  { keywords: ['remind', 'reminder'], reply: "Got it! I'll set a reminder for you.", task: { type: 'Reminder', status: 'Pending', description: null, summary: '' } },
+  { keywords: ['schedule', 'calendar', 'appointment', 'meeting'], reply: "I'll add that to your calendar.", task: { type: 'Calendar', status: 'Pending', description: null, summary: '' } },
+  { keywords: ['call', 'escalat', 'contact', 'reach'], reply: "I'll handle that for you and report back.", task: { type: 'Escalation', status: 'In Progress', description: null, summary: '' } },
+];
+
+export async function sendMessage(messages) {
+  const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
+
+  if (apiKey) {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true',
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 512,
+        system: "You are G, a helpful AI secretary. When you create a task for the user, include a <task> block at the end of your response with these fields: <task><type>Reminder|Calendar|Escalation</type><status>Pending|In Progress|Needs Approval</status><description>short description</description><summary>one-line summary</summary></task>",
+        messages,
+      }),
+    });
+    const data = await res.json();
+    return data.content?.[0]?.text ?? "Sorry, I couldn't get a response.";
+  }
+
+  // Mock fallback
+  const lastUser = messages[messages.length - 1]?.content?.toLowerCase() ?? '';
+  const match = MOCK_RESPONSES.find((m) => m.keywords.some((k) => lastUser.includes(k)));
+  if (match) {
+    const desc = lastUser.slice(0, 60);
+    return `${match.reply}\n<task><type>${match.task.type}</type><status>${match.task.status}</status><description>${desc}</description><summary>${match.task.summary}</summary></task>`;
+  }
+  return "I'm here to help! You can ask me to set reminders, schedule events, or handle tasks on your behalf.";
+}
+
+export function parseTaskBlock(raw) {
+  const match = raw.match(/<task>([\s\S]*?)<\/task>/);
+  if (!match) return { cleanText: raw.trim(), task: null };
+
+  const xml = match[1];
+  const get = (tag) => xml.match(new RegExp(`<${tag}>(.*?)</${tag}>`))?.[1]?.trim() ?? '';
+
+  return {
+    cleanText: raw.replace(/<task>[\s\S]*?<\/task>/, '').trim(),
+    task: {
+      type: get('type') || 'Reminder',
+      status: get('status') || 'Pending',
+      description: get('description'),
+      summary: get('summary'),
+    },
+  };
+}
 
 export async function getUser() {
   return {
