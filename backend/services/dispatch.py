@@ -118,21 +118,22 @@ def run_plan(plan: dict, user: User, db: Session | None = None) -> list[dict]:
             continue
 
         # Inject the right token for google tools
-        if tool_name == "calendar_tool" and user.calendar_token:
-            params["access_token"] = user.calendar_token
-        elif tool_name == "gmail_tool" and user.gmail_token:
-            params["access_token"] = user.gmail_token
+        # used claude to help me figure out what changes need to be made to this section based on
+        # oauth implementation
+        if tool_name in ("calendar_tool", "gmail_tool"):
+            params["user_id"] = user.id
 
         adapter = TOOL_REGISTRY.get(tool_name)
         if adapter is None:
-            # claude hallucinated a tool name -- log + skip rather than 500
             print(f"[dispatch] unknown tool '{tool_name}', skipping step", flush=True)
             results.append({"tool": tool_name, "status": "skipped", "error": "unknown tool"})
             continue
 
         try:
-            result = adapter.execute(params)
-            results.append({"tool": tool_name, "status": "ok", "result": result})
+            if tool_name in ("calendar_tool", "gmail_tool"):
+                result = adapter.execute(params, db)
+            else:
+                result = adapter.execute(params)
         except Exception as exc:
             print(f"[dispatch] {tool_name} failed: {type(exc).__name__}: {exc}", flush=True)
             results.append({"tool": tool_name, "status": "error", "error": str(exc)})
