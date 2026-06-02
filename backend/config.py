@@ -46,6 +46,10 @@ class Settings(BaseSettings):
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
 
+    #auth
+    JWT_SECRET: str = "change-me-in-production"
+    JWT_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
+
     #misc
     APP_ENV: str = "development"  #dev | staging | prod
     LOG_LEVEL: str = "INFO"

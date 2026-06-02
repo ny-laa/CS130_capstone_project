@@ -12,30 +12,17 @@ from adapters.llm.claude_adapter import ClaudeAdapter
 from config import TWILIO_AUTH_TOKEN
 from database import get_db
 from middleware.twilio_signature import validate_twilio_signature
-from models.user import User
 from services import dispatch
 from services.message_service import log_message
 from services.user_service import get_user_by_phone
+from services.user_context_service import build_user_context
+
 
 router = APIRouter()
 
 # Module-level singletons — reuse HTTP connection pools across requests.
 _llm = ClaudeAdapter()
 _sms = SMSTool()
-
-
-def _user_context(user: User) -> dict:
-    """Sanitized user view we pass to claude as context. NEVER include
-    calendar_token / gmail_token here — those go to tool adapters at
-    dispatch time, not into the LLM prompt."""
-    return {
-        "user_id": str(user.id),
-        "email": user.email,
-        "comm_style": user.comm_style.value if user.comm_style else None,
-        "preferred_channel": (
-            user.preferred_channel.value if user.preferred_channel else None
-        ),
-    }
 
 
 # TODO: swap with the deployed signup URL once the frontend ships.
@@ -125,15 +112,13 @@ async def inbound_sms(
     # Synchronous LLM call here is a deviation from "validate → enqueue →
     # return fast"; becomes a queue push once celery is wired.
     try:
+        user_context = build_user_context(db, user.id)
+        user_context["current_time_iso"] = datetime.now().astimezone().isoformat()
+
         plan = _llm.handle(
             body,
             SMS_SYSTEM_PROMPT,
-            context={
-                "user": _user_context(user),
-                # tz-aware local server time -- claude resolves relative phrasing
-                # ("in 2 minutes") and absolute phrasing ("at 6:55") against this
-                "current_time_iso": datetime.now().astimezone().isoformat(),
-            },
+            context=user_context,
         )
         reply = (plan.get("response_message") or "").strip() or "Got it."
     except Exception as exc:

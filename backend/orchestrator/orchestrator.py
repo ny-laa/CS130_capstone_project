@@ -5,9 +5,34 @@
 from backend.adapters.llm.claude_adapter import ClaudeAdapter
 from backend.models.datatypes import TaskType, TaskStatus
 from backend.orchestrator.task_planner import TaskPlanner, Task
+from backend.orchestrator.escalation_engine import EscalationEngine
+from backend.workers.task_runner import TaskRunner
 from datetime import datetime, timezone
 
 from uuid import UUID, uuid4
+
+
+# [AI prompt]: generate a Planner system prompt that forces claude to return a JSON plan with fields task_type, description, plan_steps (list of tool, params, status), and response_message. The prompt should make it clear that the LLM should NOT try to execute any steps itself, only return the plan. Available tools are sms_tool, calendar_tool, gmail_tool, call_tool, script_tool, user_pref_tool. The task types can be reminder, calendar_update, information_request, morning_digest. The response_message is a short friendly confirmation to send back to the parent after the plan is created.
+
+#[ellito note] This is clear and uses the same schema as before. I will jsut use it in the handle function 
+
+_PLANNER_SYSTEM_PROMPT = """You are G, a task-planning AI for a personal assistant app.
+Your ONLY job is to produce a JSON execution plan. You do NOT send messages, set reminders,
+or take any action yourself — a separate worker will execute each step you specify.
+
+Return ONLY valid JSON, no other text:
+{
+    "task_type": "<one of: reminder, calendar_update, information_request, morning_digest>",
+    "description": "<one-line summary of what the parent is asking for>",
+    "plan_steps": [
+        {"tool": "<tool name>", "params": {}, "status": "PENDING"}
+    ],
+    "response_message": "<short friendly confirmation to send back to the parent>"
+}
+
+Available tools: sms_tool, calendar_tool, gmail_tool, call_tool, script_tool, user_pref_tool"""
+
+
 class GOrchestrator:
 
     def __init__(self, llm_adapter=None):
@@ -17,8 +42,7 @@ class GOrchestrator:
     def handle(self, query: str, context: dict = None) -> dict:
         # just pass the query straight to the llm adapter
         # context is optional (e.g. calendar events, user prefs)
-        # for now systemp prompt "", figure out later
-        return self.llm.handle(query, "", context)
+        return self.llm.handle(query, _PLANNER_SYSTEM_PROMPT, context)
 
     def delegate_task(self, message: str, user_id: UUID, context: dict |None = None) -> Task:
         # main entry point from the webhook handlers
@@ -44,12 +68,32 @@ class GOrchestrator:
         return task
     
 
-    def handle_incoming_message(self, userID: UUID, rawText: str) -> None:
-        # TODO: this is for two-way conversations, where G might ask follow-up questions and the parent can reply
-        pass  # will implement this later once we have some basic tasks working
+    def request_escalation_approval(self, task: Task, sms_tool, to: str) -> None:
+        # we could change up the prompt to more specific or friendly if we want, but the idea is to ask the parent to approve or deny the escalation by clicking teh button of approvala
+        step = task.task_plan.current_step()
+        question= f"G needs your approval to run {step.tool} with params {step.params}. Open the G app to Approve or Deny."
+        task.escalation_question = question
+        sms_tool.execute({"to": to, "message": question})
 
-    def resume_task_from_reply(self, userID: UUID, taskID: UUID, replyText: str) -> None:
-        # TODO: this is for when G needs to ask the parent a question in the middle of executing a task, e.g. "which event do you want to move?" and then the parent replies with the answer
-        pass  # will implement this later once we have some basic tasks working
+    def resume_task_from_reply(self, task: Task, approved: bool, tool_registry: dict) -> None:
+        # update task status according to the replys 
+        # we assume a struvrued field that is from the website approve button or llm interpretation of SMS / call resposne
+        if not approved:
+            task.status = TaskStatus.FAILED
+            return
+        step = task.task_plan.current_step()
+        adapter=tool_registry.get(step.tool)
+        if adapter is None:
+            raise KeyError(f"No adapter for tool: {step.tool}")
+        adapter.execute(step.params)
+        step.status= TaskStatus.COMPLETED
+        task.task_plan.to_next_step()
+        runner = TaskRunner(tool_registry=tool_registry)
+        runner.run(task)
+
+    def handle_incoming_message(self, userID: UUID, rawText: str) -> None:
+        # call cases
+        # TODO: two-way conversation handling
+        pass
 
 

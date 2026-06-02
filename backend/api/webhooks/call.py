@@ -19,25 +19,14 @@ from models.user import User
 from services import dispatch
 from services.message_service import log_message
 from services.user_service import get_user_by_phone
+from services.user_context_service import build_user_context
+
 
 router = APIRouter()
 
 # Module-level singletons
 _llm = ClaudeAdapter()
 _sms = SMSTool()
-
-
-def _user_context(user: User) -> dict:
-    """Sanitized user view we pass to claude. NEVER include calendar_token /
-    gmail_token here — those go to tool adapters at dispatch time."""
-    return {
-        "user_id": str(user.id),
-        "email": user.email,
-        "comm_style": user.comm_style.value if user.comm_style else None,
-        "preferred_channel": (
-            user.preferred_channel.value if user.preferred_channel else None
-        ),
-    }
 
 
 ONBOARDING_VOICE_MESSAGE = (
@@ -108,7 +97,7 @@ def _plan(call_sid: str, user_text: str, user_ctx: dict | None = None) -> dict:
     if history:
         context["history"] = list(history)
     if user_ctx:
-        context["user"] = user_ctx
+        context.update(user_ctx)
     # tz-aware local server time -- claude resolves relative phrasing ("in 2
     # minutes") and absolute phrasing ("at 6:55") against this
     context["current_time_iso"] = datetime.now().astimezone().isoformat()
@@ -224,7 +213,11 @@ async def call_transcript(
     # speaking the response. Synchronous on the webhook thread; becomes a
     # celery push once that's wired.
     try:
-        plan = _plan(call_sid, speech_raw, user_ctx=_user_context(user))
+        plan = _plan(
+            call_sid,
+            speech_raw,
+            user_ctx=build_user_context(db, user.id),
+        )
         reply = (plan.get("response_message") or "").strip() or "Got it."
     except Exception as exc:
         print(f"[llm error] {type(exc).__name__}: {exc}", flush=True)

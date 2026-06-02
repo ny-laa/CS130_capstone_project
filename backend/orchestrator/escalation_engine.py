@@ -19,8 +19,14 @@ class EscalationEngine:
         return any(step.tool in DESCRUCTIVE_TOOLS for step in steps)
     
     def step_needs_escalation(self, step: PlanStep) -> bool:
-        # check if anytool in the step is dangerous. 
+        # check if anytool in the step is dangerous.
         return step.tool in DESCRUCTIVE_TOOLS
+
+    def parse_approval_response(self, llm_output: dict) -> bool:
+        # extracts the boolean from LLM structured output {"approved": bool}
+        # used when parent replies by SMS/call instead of clicking the app button
+        # same structued filed for both ;)
+        return bool(llm_output.get("approved", False))
     
 
 
