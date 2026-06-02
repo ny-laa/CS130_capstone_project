@@ -35,6 +35,8 @@ class Task(Base):
     description: Mapped[str] = mapped_column(Text)
     #ordered [{tool, params, status}]
     plan_steps: Mapped[list | dict | None] = mapped_column(JSONB, nullable=True)
+    #true when parent approved adding a calendar event despite a detected conflict
+    force_overlap: Mapped[bool] = mapped_column(default=False)
     #null unless ESCALATION_PENDING. 30-min timeout per design doc.
     escalation_deadline: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

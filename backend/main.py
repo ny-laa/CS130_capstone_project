@@ -6,6 +6,7 @@ from fastapi import Depends, FastAPI
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from api import tasks
 from api.webhooks import call, sms
 from config import settings
 from database import get_db
@@ -18,6 +19,7 @@ app = FastAPI(
 
 app.include_router(sms.router)
 app.include_router(call.router)
+app.include_router(tasks.router)
 
 
 @app.get("/")

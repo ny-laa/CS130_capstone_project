@@ -11,14 +11,21 @@ INTENT_PROMPT = (
     'Return ONLY JSON: {"intent": "<value>"}'
     "where value is exactly one of: reminder, calendar_update, information_request, morning_digest."
 
-
 )
 
 MAX_RETRIES = 5
 
-# requried key fields in structured task plan output from the llm. if any are missing, we will retry with a few-shot example to guide the llm to output the right format
+# required top-level keys for every plan response
 _REQUIRED_PLAN_KEYS = {"task_type", "description", "plan_steps", "response_message"}
 _REQUIRED_INTENT_KEYS = {"intent"}
+
+# incase we have to add some extra fields in the future for speficic task types (such as calendar adding)
+_REQUIRED_PLAN_KEYS_BY_TYPE: dict = {
+    TaskType.REMINDER:            _REQUIRED_PLAN_KEYS,
+    TaskType.CALENDAR_UPDATE:     _REQUIRED_PLAN_KEYS,
+    TaskType.INFORMATION_REQUEST: _REQUIRED_PLAN_KEYS,
+    TaskType.MORNING_DIGEST:      _REQUIRED_PLAN_KEYS,
+}
 
 
 def _missing_keys(raw: dict, required: set) -> set:
@@ -77,10 +84,10 @@ class StructuredTaskPlan:
         
 class Task:
     def __init__(self, id: UUID, user_id: UUID, status: TaskStatus, task_plan: StructuredTaskPlan, escalation_deadline: datetime| None, created_at:datetime, updated_at: datetime) -> None:
-        """
-        Note: instead of json, I used a list for plan steps since it now makes mor esense to use taht. 
-        """
+        # Note: instead of json, I used a list for plan steps since it now makes mor esense to use taht. 
+        
         self.step_counter=0 # incremented by task_runner as steps complete
+        self.force_overlap = False  # set to True when parent approves adding an event despite a calendar conflict
 
         self.id = id
         self.user_id = user_id
@@ -143,7 +150,7 @@ class TaskPlanner:
                 raw = self.llm_adapter.handle(query, current_prompt, context)  # raises ValueError if not JSON
                 if not isinstance(raw, dict):
                     raise ValueError(f"LLM returned non-dict JSON: {type(raw)}")
-                missing = _missing_keys(raw, _REQUIRED_PLAN_KEYS)
+                missing = _missing_keys(raw, _REQUIRED_PLAN_KEYS_BY_TYPE.get(task_type, _REQUIRED_PLAN_KEYS))
                 if not missing:
                     break
                 raise ValueError(f"missing required fields: {missing}")
@@ -205,11 +212,17 @@ class TaskPlanner:
         return examples.get(intent, "")
 
     def _system_prompt_for(self, intent: TaskType) -> str:
-        """
-        This is how the planner call the llm for exact steps of calling what tools with what prompts. I think we should consider hardwiring the tool order and only add returned script to the tool from LLM. I will fix this later. Howver, we still need scripts to specify what system prompt is to get the content from LLM """
+        
+        # This is how the planner call the llm for exact steps of calling what tools with what prompts. I think we should consider hardwiring the tool order and only add returned script to the tool from LLM. I will fix this later. Howver, we still need scripts to specify what system prompt is to get the content from LLM
+
+
+
+
         if intent == TaskType.REMINDER:
             return """
             You are a task panner for a personal assistant. The user wants to be reminded of something. 
+
+            Prepended information about the user's family member and contacts is avaliable. Use that to fill in any missing details in the plan, such as who the event is with or where it is.
 
             Avaliable tools (use in this order):
             1. user_pref_tool — fetch the user's preferred contact channel (sms or voice)
@@ -236,6 +249,8 @@ class TaskPlanner:
             return """
             You are a task planner for a personal assistant. The user wants to create, move, reschedule, or delete a calendar event. This is NOT a lookup — it is an action that changes the calendar.
 
+            Prepended information about the user's family member and contacts is avaliable. Use that to fill in any missing details in the plan, such as who the event is with or where it is.
+
             IMPORTANT: For any write (create/update/move), ALWAYS include a check_availability step FIRST. The worker will pause and ask the parent if there is a conflict — do NOT skip this step.
 
             Available tools (use in this order for writes):
@@ -257,6 +272,8 @@ class TaskPlanner:
         elif intent == TaskType.INFORMATION_REQUEST:
             return """
                 You are a task planner for a personal assistant. The user wants to look up specific information — a particular email, a single calendar event, or one specific detail. This is NOT a full day summary (that is morning_digest).
+
+                Prepended information about the user's family member and contacts is avaliable. Use that to fill in any missing details in the plan, such as who the event is with or where it is.
 
                 Available tools (use what fits the query):
                     1. gmail_tool — search a specific email
@@ -286,6 +303,8 @@ class TaskPlanner:
         elif intent==TaskType.MORNING_DIGEST:
             return"""
             You are a task planner for a personal assistant. The user wants a full day overview — all calendar events AND important emails for today, compiled into one briefing. This is NOT a specific lookup (that is information_request).
+
+            Prepended information about the user's family member and contacts is avaliable. Use that to fill in any missing details in the plan, such as who the event is with or where it is.
 
             Available tools (use in this order):
                 1. calendar_tool — fetch all of today's events

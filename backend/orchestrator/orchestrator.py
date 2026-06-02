@@ -53,6 +53,7 @@ class GOrchestrator:
         
         planner = TaskPlanner(self.llm)
         task_intent = planner.extract_intent(message, str(context)) # need to make context into string
+        
         plan = planner.create_task_plan(message, context, task_intent)
 
         task = Task(
@@ -84,17 +85,25 @@ class GOrchestrator:
         sms_tool.execute({"to": to, "message": question})
 
     def resume_task_from_reply(self, task: Task, approved: bool, tool_registry: dict) -> None:
-        # update task status according to the replys 
-        # we assume a struvrued field that is from the website approve button or llm interpretation of SMS / call resposne
         if not approved:
+            # parent clicked deny, early return!
             task.status = TaskStatus.FAILED
             return
+        
+        # parent approved, resume task ;)
         step = task.task_plan.current_step()
-        adapter=tool_registry.get(step.tool)
+        # if the parent approved despite a calendar conflict, record it on the task and
+        # inject force_overlap into the next write step's params so the calendar tool can skip its own guard
+        if isinstance(step.result, dict) and step.result.get("available") is False:
+            task.force_overlap = True
+            next_step = task.task_plan.plan_steps[task.task_plan.step_counter + 1] if task.task_plan.step_counter + 1 < len(task.task_plan.plan_steps) else None
+            if next_step:
+                next_step.params["force_overlap"] = True
+        adapter = tool_registry.get(step.tool)
         if adapter is None:
             raise KeyError(f"No adapter for tool: {step.tool}")
         adapter.execute(step.params)
-        step.status= TaskStatus.COMPLETED
+        step.status = TaskStatus.COMPLETED
         task.task_plan.to_next_step()
         runner = TaskRunner(tool_registry=tool_registry)
         runner.run(task)

@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     type                 VARCHAR(50)  NOT NULL,
     description          TEXT         NOT NULL,
     plan_steps           JSONB,
+    force_overlap        BOOLEAN      NOT NULL DEFAULT FALSE,  -- parent approved adding event despite calendar conflict
     escalation_deadline  TIMESTAMPTZ,
     created_at           TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     updated_at           TIMESTAMPTZ  NOT NULL DEFAULT NOW()
