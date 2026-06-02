@@ -12,7 +12,7 @@ from adapters.llm.claude_adapter import ClaudeAdapter
 from config import TWILIO_AUTH_TOKEN
 from database import get_db
 from middleware.twilio_signature import validate_twilio_signature
-from services import dispatch
+from services import dispatch, task_service
 from services.message_service import log_message
 from services.user_service import get_user_by_phone
 from services.user_context_service import build_user_context
@@ -125,6 +125,19 @@ async def inbound_sms(
         print(f"[sms llm error] {type(exc).__name__}: {exc}", flush=True)
         plan = {}
         reply = "Sorry, I had trouble with that. Try again?"
+
+    # save task so the frontend and approve/deny endpoints can look it up by id
+    if plan.get("task_type") and plan.get("description"):
+        try:
+            task_service.create_task(
+                db,
+                user_id=user.id,
+                task_type=plan["task_type"],
+                description=plan["description"],
+                plan_steps=plan.get("plan_steps", []),
+            )
+        except Exception as exc:
+            print(f"[sms persist error] {type(exc).__name__}: {exc}", flush=True)
 
     # Run any plan_steps claude generated (calendar/gmail/etc). Tokens get
     # injected from `user` inside dispatch -- never via the LLM. Dispatch
