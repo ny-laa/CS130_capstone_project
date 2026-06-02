@@ -13,16 +13,48 @@ from services.user_context_service import (
 
 
 def _make_user():
-    # simple fake user row for tests! 
+    # simple fake user row for tests! mirrors the columns that
+    # _format_user reads -- new Profile-page knobs included so context
+    # building doesn't blow up on a missing attribute.
     return SimpleNamespace(
         id=uuid4(),
-        full_name="Radhika Kakkar",
+        name="Radhika Kakkar",
         email="rads@example.com",
+
+        # ── communication ──────────────────────────────────────
         comm_style=CommStyle.BRIEF,
         preferred_channel=PreferredChannel.SMS,
+        call_urgency_threshold="high",
+
+        # ── notification timing ────────────────────────────────
         blocked_windows=[{"start_time": "22:00", "end_time": "07:00"}],
-        calendar_token="secret-calendar-token",
-        gmail_token=None,
+        keep_free_windows=None,
+        active_days=["mon", "tue", "wed", "thu", "fri"],
+
+        # ── morning digest ─────────────────────────────────────
+        morning_digest_enabled=True,
+        morning_digest_time="08:00",
+        morning_digest_content="calendar",
+        morning_digest_travel_time=False,
+
+        # ── escalation behavior ────────────────────────────────
+        escalation_timeout_minutes=30,
+        auto_approve_low_risk=True,
+        max_reminders=3,
+
+        # ── G's behavior ───────────────────────────────────────
+        tone="casual",
+        reminder_lead_time_minutes=60,
+        conflict_handling="suggest",
+
+        # ── google integration ─────────────────────────────────
+        # one bundle now covers calendar + gmail. raw token nested under
+        # access_token -- _format_user surfaces booleans only.
+        google_oauth={
+            "access_token": "secret-google-access-token",
+            "refresh_token": "secret-google-refresh-token",
+            "expiry": "2099-01-01T00:00:00",
+        },
     )
 
 
@@ -45,6 +77,7 @@ def test_build_user_context(
         id=uuid4(),
         name="Emma",
         relation="Daughter",
+        phone_number=None,
     )
 
     contact = SimpleNamespace(
@@ -71,12 +104,19 @@ def test_build_user_context(
     result = build_user_context(db, user.id)
 
     assert result["user"]["user_id"] == str(user.id)
-    assert result["user"]["full_name"] == "Radhika Kakkar"
+    assert result["user"]["name"] == "Radhika Kakkar"
     assert result["user"]["comm_style"] == "brief"
     assert result["user"]["preferred_channel"] == "sms"
+    assert result["user"]["call_urgency_threshold"] == "high"
+    assert result["user"]["morning_digest_enabled"] is True
+    assert result["user"]["morning_digest_content"] == "calendar"
+    assert result["user"]["tone"] == "casual"
+    assert result["user"]["conflict_handling"] == "suggest"
 
+    # both flags flip together now that one google_oauth bundle covers
+    # both scopes -- having a token in the bundle means both tools work.
     assert result["user"]["has_calendar_connected"] is True
-    assert result["user"]["has_gmail_connected"] is False
+    assert result["user"]["has_gmail_connected"] is True
 
     assert result["family_members"][0]["name"] == "Emma"
     assert result["family_members"][0]["relation"] == "Daughter"
@@ -151,10 +191,15 @@ def test_context_does_not_include_raw_google_tokens():
     ):
         result = build_user_context(db, user.id)
 
+    # raw token values must never appear in the LLM-facing payload --
+    # only the has_*_connected booleans derived from them.
     assert "calendar_token" not in result["user"]
     assert "gmail_token" not in result["user"]
+    assert "google_oauth" not in result["user"]
+    assert "access_token" not in result["user"]
 
-    assert "secret-calendar-token" not in str(result)
+    assert "secret-google-access-token" not in str(result)
+    assert "secret-google-refresh-token" not in str(result)
 
 
 def test_get_preferences_returns_simple_dictionary():

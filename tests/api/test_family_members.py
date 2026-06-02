@@ -16,12 +16,16 @@ def _override_db():
     yield MagicMock()
 
 
-def _fake_member(user_id, name="Sarah", relation="Spouse"):
+def _fake_member(user_id, name="Sarah", relation="Spouse", phone_number=None):
     m = MagicMock()
     m.id = uuid4()
     m.user_id = user_id
     m.name = name
     m.relation = relation
+    #FamilyMemberResponse now requires phone_number (str | None), so set
+    #it explicitly -- MagicMock's auto-attr would hand pydantic a Mock obj
+    #and fail validation.
+    m.phone_number = phone_number
     m.created_at = datetime.now(timezone.utc)
     return m
 

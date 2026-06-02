@@ -48,6 +48,34 @@ class TaskType(str, Enum):
     MORNING_DIGEST      = "morning_digest"
 
 
+# urgency level at which G escalates to a phone call instead of SMS.
+# 'any'   = always call, 'high' = only for high-urgency tasks,
+# 'never' = stay on SMS no matter what
+class CallUrgency(str, Enum):
+    ANY   = "any"
+    HIGH  = "high"
+    NEVER = "never"
+
+
+# what morning digest includes besides the calendar
+class DigestContent(str, Enum):
+    CALENDAR        = "calendar"
+    CALENDAR_EMAIL  = "calendar+email"
+    CALENDAR_TASKS  = "calendar+tasks"
+
+
+# voice/tone G uses in outbound messages
+class Tone(str, Enum):
+    CASUAL = "casual"
+    FORMAL = "formal"
+
+
+# what G does for scheduling conflict
+class ConflictHandling(str, Enum):
+    SUGGEST = "suggest"  # propose a reschedule
+    FLAG    = "flag"     # just surface it, let parent decide
+
+
 class MessageDirection(str, Enum):
     INBOUND  = "inbound"
     OUTBOUND = "outbound"

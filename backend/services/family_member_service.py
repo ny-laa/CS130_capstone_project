@@ -39,6 +39,7 @@ def create_family_member(
     user_id: UUID,
     name: str,
     relation: str | None = None,
+    phone_number: str | None = None,
 ) -> FamilyMember:
     #verify the user exists -- avoids fk-violation 500s from the api.
     if db.get(User, user_id) is None:
@@ -47,7 +48,12 @@ def create_family_member(
     if not name.strip():
         raise ValueError("Family member name cannot be empty")
 
-    member = FamilyMember(user_id=user_id, name=name.strip(), relation=relation)
+    member = FamilyMember(
+        user_id=user_id,
+        name=name.strip(),
+        relation=relation,
+        phone_number=phone_number,
+    )
     db.add(member)
     try:
         db.commit()
@@ -64,6 +70,7 @@ def update_family_member(
     member_id: UUID,
     name: str | None = None,
     relation: str | None = None,
+    phone_number: str | None = None,
 ) -> FamilyMember:
     #partial update -- unset args are left as-is. pass relation=None
     #via a sentinel if you ever need to clear it (not exposed today).
@@ -78,6 +85,9 @@ def update_family_member(
 
     if relation is not None:
         member.relation = relation
+
+    if phone_number is not None:
+        member.phone_number = phone_number
 
     try:
         db.commit()
