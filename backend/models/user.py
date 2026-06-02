@@ -19,8 +19,10 @@ class User(Base):
     id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True), primary_key=True, default=uuid4
     )
-    phone_number: Mapped[str] = mapped_column(String(20), unique=True, index=True)
-    email: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    phone_number: Mapped[str | None] = mapped_column(String(20), unique=True, index=True, nullable=True)
+    email: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True, index=True)
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     comm_style: Mapped[CommStyle] = mapped_column(
         Enum(CommStyle, name="comm_style", values_callable=lambda e: [m.value for m in e]),
         default=CommStyle.BRIEF,

@@ -13,6 +13,22 @@ class UserCreate(BaseModel):
     email: str | None = None
 
 
+class UserRegister(BaseModel):
+    name: str
+    email: str
+    password: str
+
+
+class UserLogin(BaseModel):
+    email: str
+    password: str
+
+
+class AuthResponse(BaseModel):
+    user: "UserResponse"
+    token: str
+
+
 class UserPreferencesUpdate(BaseModel):
     comm_style: CommStyle | None = None
     preferred_channel: PreferredChannel | None = None
@@ -21,7 +37,8 @@ class UserPreferencesUpdate(BaseModel):
 
 class UserResponse(BaseModel):
     id: UUID
-    phone_number: str
+    name: str | None
+    phone_number: str | None
     email: str | None
     comm_style: CommStyle
     preferred_channel: PreferredChannel
