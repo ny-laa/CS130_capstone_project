@@ -53,6 +53,7 @@ class GOrchestrator:
         
         planner = TaskPlanner(self.llm)
         task_intent = planner.extract_intent(message, str(context)) # need to make context into string
+        
         plan = planner.create_task_plan(message, context, task_intent)
 
         task = Task(
@@ -69,24 +70,40 @@ class GOrchestrator:
     
 
     def request_escalation_approval(self, task: Task, sms_tool, to: str) -> None:
-        # we could change up the prompt to more specific or friendly if we want, but the idea is to ask the parent to approve or deny the escalation by clicking teh button of approvala
+        # when G needs approval from the parent to execute a step send an SMS to notify parent
         step = task.task_plan.current_step()
-        question= f"G needs your approval to run {step.tool} with params {step.params}. Open the G app to Approve or Deny."
+
+
+        result = step.result  # returns None if step doesn't have a result attribute (NOT False unless we specify it. safe ;) 
+        if isinstance(result, dict) and result.get("available") is False and result.get("busy_windows"):
+            busy = result["busy_windows"]
+            conflict_str = f"{busy[0]['start']} to {busy[0]['end']}" if busy else "that time"
+            question = f"There's a scheduling conflict: you're busy from {conflict_str}. Open the G app to Approve (add anyway) or Deny."
+        else:
+            question = f"G needs your approval to run {step.tool}. Open the G app to Approve or Deny."
         task.escalation_question = question
         sms_tool.execute({"to": to, "message": question})
 
     def resume_task_from_reply(self, task: Task, approved: bool, tool_registry: dict) -> None:
-        # update task status according to the replys 
-        # we assume a struvrued field that is from the website approve button or llm interpretation of SMS / call resposne
         if not approved:
+            # parent clicked deny, early return!
             task.status = TaskStatus.FAILED
             return
+        
+        # parent approved, resume task ;)
         step = task.task_plan.current_step()
-        adapter=tool_registry.get(step.tool)
+        # if the parent approved despite a calendar conflict, record it on the task and
+        # inject force_overlap into the next write step's params so the calendar tool can skip its own guard
+        if isinstance(step.result, dict) and step.result.get("available") is False:
+            task.force_overlap = True
+            next_step = task.task_plan.plan_steps[task.task_plan.step_counter + 1] if task.task_plan.step_counter + 1 < len(task.task_plan.plan_steps) else None
+            if next_step:
+                next_step.params["force_overlap"] = True
+        adapter = tool_registry.get(step.tool)
         if adapter is None:
             raise KeyError(f"No adapter for tool: {step.tool}")
         adapter.execute(step.params)
-        step.status= TaskStatus.COMPLETED
+        step.status = TaskStatus.COMPLETED
         task.task_plan.to_next_step()
         runner = TaskRunner(tool_registry=tool_registry)
         runner.run(task)

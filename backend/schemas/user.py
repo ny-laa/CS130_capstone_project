@@ -81,9 +81,9 @@ class UserProfileUpdate(BaseModel):
     email: str | None = Field(default=None, max_length=255)
 
 
+# dropped the extra name field (useless with fullname)
 class UserResponse(BaseModel):
     id: UUID
-    name: str | None
     phone_number: str | None
     email: str | None
 

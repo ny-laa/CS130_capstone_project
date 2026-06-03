@@ -22,6 +22,12 @@ class EscalationEngine:
         # check if anytool in the step is dangerous.
         return step.tool in DESCRUCTIVE_TOOLS
 
+    def step_result_needs_escalation(self, step: PlanStep, result: dict) -> bool:
+        # a check_availability result with busy windows means a calendar conflict
+        if not isinstance(result, dict):
+            return False
+        return result.get("available") is False and bool(result.get("busy_windows"))
+
     def parse_approval_response(self, llm_output: dict) -> bool:
         # extracts the boolean from LLM structured output {"approved": bool}
         # used when parent replies by SMS/call instead of clicking the app button
