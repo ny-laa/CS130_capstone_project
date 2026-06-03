@@ -1,5 +1,5 @@
-import { NavLink, Link } from 'react-router-dom';
-import { clearUser } from '../auth';
+import { NavLink, useNavigate} from 'react-router-dom';
+import { isLoggedIn, clearUser } from '../auth';
 
 // [GenAI Use] LLM Response Start
 // NavBar with NAV_ITEMS, NavLink active class styling
@@ -18,12 +18,25 @@ import { clearUser } from '../auth';
 // when on the /chat route.
 
 export default function NavBar() {
+  const loggedIn = isLoggedIn();
+  const navigate = useNavigate();
   const NAV_ITEMS = [
     { to: '/tasks', label: 'Tasks', icon: '✓' },
     { to: '/chat', label: 'Chat', icon: '💬' },
     { to: '/conversations', label: 'History', icon: '◎' },
     { to: '/profile', label: 'Profile', icon: '⊙' },
   ];
+
+  // adding this to ensure state update
+  function handleAuth(){
+    if (loggedIn){
+      clearUser();
+      navigate('/signin')
+    }
+    else{
+      navigate('/signup')
+    }
+  }
 
   return (
     <nav className="navbar">
@@ -42,9 +55,9 @@ export default function NavBar() {
           </li>
         ))}
       </ul>
-      <Link to="/signup" className="navbar-signup" onClick={clearUser}>
-        Sign Up
-      </Link>
+      <button className="navbar-signup" onClick={handleAuth}>
+        {loggedIn ? 'Sign Out' : 'Sign Up'}
+      </button>
     </nav>
   );
 }
