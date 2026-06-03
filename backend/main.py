@@ -19,6 +19,8 @@ from api.webhooks import call, sms
 from config import settings
 from database import get_db
 
+from api.auth.oauth import router as oauth_router
+
 app = FastAPI(
     title="G",
     description="parent's personal ai secretary -- backend",

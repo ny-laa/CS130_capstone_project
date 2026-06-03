@@ -44,7 +44,11 @@ def create(
 ):
     try:
         return create_family_member(
-            db, user_id=user_id, name=payload.name, relation=payload.relation
+            db,
+            user_id=user_id,
+            name=payload.name,
+            relation=payload.relation,
+            phone_number=payload.phone_number,
         )
     except ValueError as exc:
         msg = str(exc)
@@ -74,6 +78,7 @@ def patch(
             member_id=member_id,
             name=payload.name,
             relation=payload.relation,
+            phone_number=payload.phone_number,
         )
     except ValueError as exc:
         msg = str(exc)
