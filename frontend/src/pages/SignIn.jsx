@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { isLoggedIn, setToken, setUser } from '../auth';
-import { login } from '../api';
+import { isLoggedIn, setToken, setUser, getProfileByEmail } from '../auth';
 
 export default function SignIn() {
   const navigate = useNavigate();
@@ -13,22 +12,39 @@ export default function SignIn() {
     if (isLoggedIn()) navigate('/tasks', { replace: true });
   }, [navigate]);
 
-  async function handleSubmit(e) {
+  function handleSubmit(e) {
     e.preventDefault();
     if (!form.email.trim() || !form.password) { setError('Please fill in all fields.'); return; }
 
     setSubmitting(true);
-    setError('');
-    try {
-      const { user, token } = await login(form.email.trim(), form.password);
-      setUser(user);
-      setToken(token);
+    const email = form.email.trim();
+    const saved = getProfileByEmail(email);
+
+    if (saved) {
+      setUser(saved);
+      setToken('demo-token');
       navigate('/tasks');
-    } catch {
-      setError('Invalid email or password.');
-    } finally {
-      setSubmitting(false);
+    } else {
+      // No existing profile — derive a display name from the email prefix.
+      const prefix = email.split('@')[0];
+      const name = prefix
+        .replace(/[._-]/g, ' ')
+        .replace(/\b\w/g, (c) => c.toUpperCase());
+      const newUser = {
+        name,
+        email,
+        phone: '',
+        familyMembers: [],
+        contacts: [],
+        providers: [],
+        preferences: null,
+        bannerDismissed: false,
+      };
+      setUser(newUser);
+      setToken('demo-token');
+      navigate('/tasks');
     }
+    setSubmitting(false);
   }
 
   function set(field) {

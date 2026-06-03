@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { isLoggedIn, setToken, setUser } from '../auth';
-import { register } from '../api';
+import { isLoggedIn, setToken } from '../auth';
 
 export default function SignUp() {
   const navigate = useNavigate();
@@ -23,23 +22,20 @@ export default function SignUp() {
     return e;
   }
 
-  async function handleSubmit(e) {
+  function handleSubmit(e) {
     e.preventDefault();
     const errs = validate();
     if (Object.keys(errs).length) { setErrors(errs); return; }
 
     setSubmitting(true);
-    setErrors({});
-    try {
-      const { user, token } = await register(form.name.trim(), form.email.trim(), form.password);
-      setUser(user);
-      setToken(token);
-      navigate('/onboard/step1');
-    } catch (err) {
-      setErrors({ form: err.message || 'Registration failed. Please try again.' });
-    } finally {
-      setSubmitting(false);
-    }
+    // Store name + email in onboard scratch so Step1Family can pre-populate them.
+    localStorage.setItem('g_onboard', JSON.stringify({
+      name: form.name.trim(),
+      email: form.email.trim(),
+    }));
+    setToken('demo-token');
+    navigate('/onboard/step1');
+    setSubmitting(false);
   }
 
   function set(field) {
