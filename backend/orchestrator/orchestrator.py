@@ -2,11 +2,11 @@
 # GOrchestrator: takes a task from the user, builds a plan, dispatches to the right tools
 # also handles escalation when G needs human approval before doing something
 
-from backend.adapters.llm.claude_adapter import ClaudeAdapter
-from backend.models.datatypes import TaskType, TaskStatus
-from backend.orchestrator.task_planner import TaskPlanner, Task
-from backend.orchestrator.escalation_engine import EscalationEngine
-from backend.workers.task_runner import TaskRunner
+from adapters.llm.claude_adapter import ClaudeAdapter
+from models.datatypes import TaskType, TaskStatus
+from orchestrator.task_planner import TaskPlanner, Task
+from orchestrator.escalation_engine import EscalationEngine
+from workers.task_runner import TaskRunner
 from datetime import datetime, timezone
 
 from uuid import UUID, uuid4

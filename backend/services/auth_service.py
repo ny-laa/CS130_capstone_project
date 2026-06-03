@@ -12,11 +12,11 @@ _pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def hash_password(plain: str) -> str:
-    return _pwd_ctx.hash(plain)
+    return _pwd_ctx.hash(plain[:72])
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return _pwd_ctx.verify(plain, hashed)
+    return _pwd_ctx.verify(plain[:72], hashed)
 
 
 def create_token(user_id: UUID) -> str:
@@ -43,7 +43,7 @@ def register_user(db: Session, name: str, email: str, password: str) -> User:
         raise ValueError("An account with this email already exists.")
 
     user = User(
-        name=name,
+        full_name=name,
         email=email,
         password_hash=hash_password(password),
     )

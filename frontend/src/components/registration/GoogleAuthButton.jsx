@@ -45,7 +45,9 @@ function GoogleSignOn() {
         curClient.current?.requestCode();
     };
     return(
-        <button onClick={handleClick}>Sign In</button>
+        <div style={{ marginTop: '12px', marginBottom: '12px'}}>
+            <button className="auth-btn auth-btn--google" onClick={handleClick}>Sign In with Google</button>
+        </div>
     )
 }
 

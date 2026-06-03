@@ -3,31 +3,35 @@
 from unittest.mock import MagicMock, patch
 import base64
 import pytest
-from backend.adapters.google.gmail_tool import GmailTool
+from uuid import uuid4
+from adapters.google.gmail_tool import GmailTool
 
 
-def test_execute_requires_access_token():
+@patch("adapters.google.gmail_tool.get_access_token")
+def test_execute_requires_user_id(mock_get_token):
     tool = GmailTool()
-
-    with pytest.raises(ValueError, match="access_token is required"):
+    db = MagicMock()
+    with pytest.raises(ValueError, match="user_id needed"):
         tool.execute({
             "operation": "read",
-            "query": "school newer_than:1d",
-        })
+            "query": "school newer_than:1d"
+        }, db)
 
 
-def test_execute_routes_read_op(): #just testing basic flow, only read op supported for now 
+# had claude patch test after changes
+@patch("adapters.google.gmail_tool.get_access_token")
+def test_execute_routes_read_op(mock_get_token):
+    mock_get_token.return_value = "fake-token"
     tool = GmailTool()
     tool.read = MagicMock(return_value=[])
-
+    db = MagicMock()
     result = tool.execute({
         "operation": "read",
-        "access_token": "fake-token",
+        "user_id": uuid4(),
         "query": "school newer_than:1d",
         "max_results": 5,
         "include_body": False,
-    })
-
+    }, db)
     assert result == []
     tool.read.assert_called_once_with(
         access_token="fake-token",
@@ -59,7 +63,7 @@ def test_decode_body_data():
     assert result == original_text
 
 
-@patch("backend.adapters.google.gmail_tool.build")
+@patch("adapters.google.gmail_tool.build")
 def test_read_simplifies_emails(mock_build):
     # mock Gmail service chain:
     fake_service = MagicMock()

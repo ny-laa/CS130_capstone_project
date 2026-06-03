@@ -2,8 +2,8 @@
 # picks up tasks from the queue and runs them using the orchestrator
 
 
-from backend.orchestrator.escalation_engine import EscalationEngine
-from backend.models.datatypes import TaskStatus
+from orchestrator.escalation_engine import EscalationEngine
+from models.datatypes import TaskStatus
 
 class TaskRunner:
     def __init__(self, tool_registry:dict):

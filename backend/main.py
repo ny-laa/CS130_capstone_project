@@ -42,6 +42,7 @@ app.include_router(providers_router)
 app.include_router(sms.router)
 app.include_router(call.router)
 app.include_router(tasks_api.router)
+app.include_router(oauth_router)
 
 # Debug endpoints for manually firing outbound tools. Only mounted when
 # DEBUG=true so they can't be hit in prod by accident.
