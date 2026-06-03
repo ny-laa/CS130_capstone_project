@@ -1,7 +1,7 @@
 # figures out when G needs to pause and ask the parent for approval
 # high-risk actions like deleting calendar events shouldnt just happen automatically
-from backend.models.datatypes import Tools
-from backend.orchestrator.task_planner import PlanStep
+from models.datatypes import Tools
+from orchestrator.task_planner import PlanStep
 
 
 DESCRUCTIVE_TOOLS={

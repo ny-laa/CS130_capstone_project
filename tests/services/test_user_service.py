@@ -144,7 +144,7 @@ def test_create_user_persists_full_name(mock_phone, mock_email):
         name="Alex Johnson",
     )
 
-    assert result.name == "Alex Johnson"
+    assert result.full_name == "Alex Johnson"
 
 
 @patch("services.user_service.get_user_by_id")
