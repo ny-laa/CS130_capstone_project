@@ -4,11 +4,40 @@
 
 from uuid import UUID
 from sqlalchemy.orm import Session
-from models.datatypes import CommStyle, PreferredChannel
+from models.datatypes import (
+    CallUrgency,
+    CommStyle,
+    ConflictHandling,
+    DigestContent,
+    PreferredChannel,
+    Tone,
+)
 from models.user import User
 from datetime import datetime, timedelta
 import httpx
 from config import settings
+
+
+# fields update_user_preferences will overlay onto the user row. ordering
+# matches the Profile page so a diff against the UI is easy to eyeball.
+_PREFERENCE_FIELDS = (
+    "comm_style",
+    "preferred_channel",
+    "call_urgency_threshold",
+    "blocked_windows",
+    "keep_free_windows",
+    "active_days",
+    "morning_digest_enabled",
+    "morning_digest_time",
+    "morning_digest_content",
+    "morning_digest_travel_time",
+    "escalation_timeout_minutes",
+    "auto_approve_low_risk",
+    "max_reminders",
+    "tone",
+    "reminder_lead_time_minutes",
+    "conflict_handling",
+)
 
 
 def get_user_by_id(db: Session, user_id: UUID) -> User | None:
@@ -114,28 +143,24 @@ def update_user_profile(
 #rename them we have to update the router too.
 
 
-def update_user_preferences(
-    db: Session,
-    user_id: UUID,
-    comm_style: CommStyle | None = None,
-    preferred_channel: PreferredChannel | None = None,
-    blocked_windows: dict | list | None = None,
-) -> User:
-    #lets user update their prefs 
+def update_user_preferences(db: Session, user_id: UUID, **updates) -> User:
+    """Partial PATCH for everything under the Profile page's settings.
 
+    Accepts any subset of `_PREFERENCE_FIELDS`. Unknown keys are ignored
+    silently so a newer API contract from the frontend can't 500 the
+    backend mid-rollout. None values are treated as "leave this field
+    alone" -- pass explicit defaults at the API boundary if you actually
+    want to clear a field.
+    """
     user = get_user_by_id(db, user_id)
 
     if user is None:
         raise ValueError("User not found")
 
-    if comm_style is not None:
-        user.comm_style = comm_style
-
-    if preferred_channel is not None:
-        user.preferred_channel = preferred_channel
-
-    if blocked_windows is not None:
-        user.blocked_windows = blocked_windows
+    for field in _PREFERENCE_FIELDS:
+        value = updates.get(field)
+        if value is not None:
+            setattr(user, field, value)
 
     try:
         db.commit()

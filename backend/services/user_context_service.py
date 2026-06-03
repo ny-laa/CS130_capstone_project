@@ -24,16 +24,44 @@ def _get_enum_value(value) -> str | None:
 
 
 def _format_user(user: User) -> dict[str, Any]:
-    # tokens are intentionally NOT included here for obv reaosns
+    # tokens are intentionally NOT included here for obv reaosns -- the LLM
+    # only needs the booleans to know which tools are wired up.
+    has_google = bool(user.google_oauth and user.google_oauth.get("access_token"))
     return {
         "user_id": str(user.id),
-        "full_name": user.full_name,
+        "name": user.name,
         "email": user.email,
+
+        #communication
         "comm_style": _get_enum_value(user.comm_style),
         "preferred_channel": _get_enum_value(user.preferred_channel),
+        "call_urgency_threshold": _get_enum_value(user.call_urgency_threshold),
+
+        #notification timing
         "blocked_windows": user.blocked_windows,
-        "has_calendar_connected": bool(user.calendar_token), # bool flags help claude know which tools are available w/o exposing the actual token! 
-        "has_gmail_connected": bool(user.gmail_token),
+        "keep_free_windows": user.keep_free_windows,
+        "active_days": user.active_days,
+
+        #morning digest 
+        "morning_digest_enabled": user.morning_digest_enabled,
+        "morning_digest_time": user.morning_digest_time,
+        "morning_digest_content": _get_enum_value(user.morning_digest_content),
+        "morning_digest_travel_time": user.morning_digest_travel_time,
+
+        #escalation behavior
+        "escalation_timeout_minutes": user.escalation_timeout_minutes,
+        "auto_approve_low_risk": user.auto_approve_low_risk,
+        "max_reminders": user.max_reminders,
+
+        # G's behavior
+        "tone": _get_enum_value(user.tone),
+        "reminder_lead_time_minutes": user.reminder_lead_time_minutes,
+        "conflict_handling": _get_enum_value(user.conflict_handling),
+
+        #integration flags
+        # one google_oauth bundle covers gmail + calendar scopes.
+        "has_calendar_connected": has_google,
+        "has_gmail_connected": has_google,
     }
 
 
@@ -42,6 +70,7 @@ def _format_family_member(member) -> dict[str, Any]:
         "id": str(member.id),
         "name": member.name,
         "relation": member.relation,
+        "phone_number": member.phone_number,
     }
 
 
