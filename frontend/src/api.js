@@ -37,6 +37,18 @@ export async function login(email, password) {
   });
 }
 
+// browser chat -- semantically identical to texting G. backend runs the
+// same conversation pipeline used for real SMS: logs inbound + outbound
+// with channel="sms" (so chat shows in History indistinguishably from
+// real texts), runs Claude, dispatches plan_steps (which persist Task
+// rows for scheduled outbound), and returns {reply, tasks_created}.
+export async function sendChatMessage(userId, message) {
+  return apiFetch(`/api/users/${userId}/chat`, {
+    method: 'POST',
+    body: JSON.stringify({ message }),
+  });
+}
+
 // re-fetch the backend's view of a user. used after onboarding writes to
 // pull the canonical state into localStorage instead of mutating
 // fields ad-hoc and risking drift.

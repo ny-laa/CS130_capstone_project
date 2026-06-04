@@ -1,37 +1,28 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { sendMessage, parseTaskBlock } from '../api';
-import { useTasks } from '../context/TaskContext';
+import { useNavigate } from 'react-router-dom';
+import { sendChatMessage } from '../api';
+import { getUser } from '../auth';
 import TypingIndicator from '../components/TypingIndicator';
 import SuggestionPills from '../components/SuggestionPills';
-import TaskSidebar from '../components/TaskSidebar';
 
+// [GenAI Use] Prompt: "Chat.jsx used to talk directly to the Anthropic
+// API from the browser, parse <task> XML out of the response, and stash
+// the parsed task in a localStorage-backed TaskContext. Replace with a
+// single POST to /api/users/{id}/chat -- backend runs the same
+// conversation pipeline as real SMS (logs inbound + outbound rows with
+// channel='sms', runs Claude, dispatches plan_steps, returns
+// {reply, tasks_created}). Drop XML parsing, drop TaskContext, drop
+// the sidebar. Messages live in component state only -- leaving the
+// page wipes the screen, but the conversation is persisted in the DB
+// and surfaces on the History page; any task created via dispatch
+// shows up on the Tasks page."
 // [GenAI Use] LLM Response Start
-// iMessage-style chat page with 60/40 split layout. Calls Anthropic
-// API and falls back to keyword-matched mock if no API key is set.
-// [GenAI Use] LLM Response End
-// [GenAI Use] Reflection: The 60/40 split puts the chat on the left
-// and task sidebar on the right. Verified the mock fallback works
-// without VITE_ANTHROPIC_API_KEY set so the UI is usable in dev.
-// Checked that task blocks parsed from AI responses get added to
-// TaskContext via addTask so they appear in the sidebar and Tasks page.
-
-const STATUS_MAP = {
-  'Pending': 'PENDING',
-  'In Progress': 'IN_PROGRESS',
-  'Needs Approval': 'ESCALATION_PENDING',
-};
-
-const TASK_PILL_LABEL = {
-  Reminder: '＋ Reminder added',
-  Calendar: '＋ Calendar event added',
-  Escalation: '＋ Escalation created',
-};
 
 function formatTime(ts) {
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-function ChatMessage({ msg, onPillClick }) {
+function ChatMessage({ msg }) {
   const isUser = msg.role === 'user';
   return (
     <div className={`chat-msg-row${isUser ? ' chat-msg-row--user' : ''}`}>
@@ -39,14 +30,6 @@ function ChatMessage({ msg, onPillClick }) {
       <div className="chat-msg-body">
         <div className={`chat-bubble${isUser ? ' chat-bubble--user' : ' chat-bubble--g'}`}>
           <span>{msg.content}</span>
-          {msg.task && (
-            <button
-              className={`task-pill task-pill--${msg.task.type.toLowerCase()}`}
-              onClick={() => onPillClick(msg.task.id)}
-            >
-              {TASK_PILL_LABEL[msg.task.type] || '＋ Task added'}
-            </button>
-          )}
         </div>
         <div className="chat-msg-time">{formatTime(msg.timestamp)}</div>
       </div>
@@ -55,15 +38,26 @@ function ChatMessage({ msg, onPillClick }) {
 }
 
 export default function Chat() {
+  const navigate = useNavigate();
+  const [userId, setUserId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [typing, setTyping] = useState(false);
-  const [conversationTaskIds, setConversationTaskIds] = useState([]);
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  // count of tasks created this session, used to show a small banner
+  // pointing the user at /tasks. doesn't track ids -- they're persisted
+  // on the backend and the Tasks page is the source of truth.
+  const [tasksCreatedCount, setTasksCreatedCount] = useState(0);
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
-  const sidebarTaskRefs = useRef({});
-  const { addTask } = useTasks();
+
+  useEffect(() => {
+    const u = getUser();
+    if (!u?.id) {
+      navigate('/signin?next=/chat', { replace: true });
+      return;
+    }
+    setUserId(u.id);
+  }, [navigate]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -71,14 +65,13 @@ export default function Chat() {
 
   const send = useCallback(async (text) => {
     const trimmed = text.trim();
-    if (!trimmed || typing) return;
+    if (!trimmed || typing || !userId) return;
 
     const userMsg = {
       id: `msg-${Date.now()}`,
       role: 'user',
       content: trimmed,
       timestamp: Date.now(),
-      task: null,
     };
 
     setMessages((prev) => [...prev, userMsg]);
@@ -90,52 +83,33 @@ export default function Chat() {
     }
 
     try {
-      const apiMessages = [...messages, userMsg].map((m) => ({
-        role: m.role,
-        content: m.content,
-      }));
-
-      const raw = await sendMessage(apiMessages);
-      const { cleanText, task: parsedTask } = parseTaskBlock(raw);
-
-      let taskObj = null;
-      if (parsedTask) {
-        const taskId = `chat-task-${Date.now()}`;
-        taskObj = {
-          id: taskId,
-          description: parsedTask.description || trimmed,
-          type: parsedTask.type || 'Reminder',
-          status: STATUS_MAP[parsedTask.status] || 'PENDING',
-          createdAt: new Date().toISOString(),
-          summary: parsedTask.summary || '',
-        };
-        addTask(taskObj);
-        setConversationTaskIds((prev) => [...prev, taskId]);
-        setDrawerOpen(true);
-      }
+      const { reply, tasks_created } = await sendChatMessage(userId, trimmed);
 
       const assistantMsg = {
         id: `msg-${Date.now() + 1}`,
         role: 'assistant',
-        content: cleanText,
+        content: reply,
         timestamp: Date.now(),
-        task: taskObj ? { ...taskObj } : null,
       };
-
       setMessages((prev) => [...prev, assistantMsg]);
+
+      if (Array.isArray(tasks_created) && tasks_created.length > 0) {
+        setTasksCreatedCount((c) => c + tasks_created.length);
+      }
     } catch (err) {
       const errMsg = {
         id: `msg-${Date.now() + 1}`,
         role: 'assistant',
-        content: "Sorry, I had trouble connecting. Please try again in a moment.",
+        content: err.message?.startsWith('HTTP')
+          ? "Sorry, I had trouble reaching the server. Try again?"
+          : err.message || "Sorry, something went wrong. Try again?",
         timestamp: Date.now(),
-        task: null,
       };
       setMessages((prev) => [...prev, errMsg]);
     } finally {
       setTyping(false);
     }
-  }, [messages, typing, addTask]);
+  }, [typing, userId]);
 
   function handleKeyDown(e) {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -151,12 +125,6 @@ export default function Chat() {
     ta.style.height = Math.min(ta.scrollHeight, 120) + 'px';
   }
 
-  function scrollToTask(taskId) {
-    const el = sidebarTaskRefs.current[taskId];
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    if (window.innerWidth <= 768) setDrawerOpen(true);
-  }
-
   return (
     <div className="chat-page">
       <div className="chat-panel">
@@ -168,13 +136,20 @@ export default function Chat() {
           </div>
         </div>
 
+        {tasksCreatedCount > 0 && (
+          <div className="chat-banner">
+            {tasksCreatedCount} task{tasksCreatedCount === 1 ? '' : 's'} added this session ·{' '}
+            <a href="/tasks">View dashboard →</a>
+          </div>
+        )}
+
         <div className="chat-messages">
           {messages.length === 0 ? (
             <SuggestionPills onSelect={send} />
           ) : (
             <>
               {messages.map((msg) => (
-                <ChatMessage key={msg.id} msg={msg} onPillClick={scrollToTask} />
+                <ChatMessage key={msg.id} msg={msg} />
               ))}
               {typing && <TypingIndicator />}
               <div ref={messagesEndRef} />
@@ -203,12 +178,15 @@ export default function Chat() {
           </button>
         </div>
       </div>
-
-      <TaskSidebar
-        taskIds={conversationTaskIds}
-        drawerOpen={drawerOpen}
-        onDrawerToggle={() => setDrawerOpen((o) => !o)}
-      />
     </div>
   );
 }
+// [GenAI Use] LLM Response End
+// [GenAI Use] Reflection: dropped the TaskSidebar entirely instead of
+// fetching tasks_created by ID on each send. The sidebar was a
+// nice-to-have UX nicety; with the Tasks page now real-DB-backed,
+// a single line "N tasks added" banner pointing at /tasks gives the
+// user the same information at much lower implementation cost. If we
+// want richer per-task previews in the sidebar later, fetch
+// getTasks(userId) once and filter by tasks_created IDs -- the data
+// is all there.
