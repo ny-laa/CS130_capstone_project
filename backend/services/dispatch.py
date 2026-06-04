@@ -27,8 +27,10 @@ from adapters.communication.call_tool import OutboundCallTool
 from adapters.communication.sms_tool import SMSTool
 from adapters.google.calendar_tool import CalendarTool
 from adapters.google.gmail_tool import GmailTool
+from models.datatypes import TaskType
 from models.user import User
 from services.notifications import notify_user
+from services.task_service import create_task
 from workers.tasks.notifications import notify_user_task
 
 
@@ -98,14 +100,31 @@ def run_plan(plan: dict, user: User, db: Session | None = None) -> list[dict]:
                             f"[dispatch] scheduled_at {scheduled_at_raw} is in the past, firing now",
                             flush=True,
                         )
+                    # persist a Task row so the Tasks page can show this
+                    # immediately as PENDING. The celery worker drives the
+                    # rest of the lifecycle (IN_PROGRESS on entry, COMPLETED
+                    # or FAILED on exit) and links the eventual outbound
+                    # message row via task_id so it shows in History too.
+                    description = (
+                        f"Reminder at {eta.strftime('%b %-d, %-I:%M %p')}: "
+                        f"{message[:80]}"
+                    )
+                    task = create_task(
+                        db,
+                        user_id=user.id,
+                        task_type=TaskType.REMINDER,
+                        description=description,
+                        plan_steps=[step],
+                    )
                     notify_user_task.apply_async(
-                        args=[str(user.id), message, channel],
+                        args=[str(user.id), message, channel, str(task.id)],
                         eta=eta,
                     )
                     results.append({
                         "tool": tool_name,
                         "status": "scheduled",
                         "scheduled_at": eta.isoformat(),
+                        "task_id": str(task.id),
                     })
                 else:
                     result = notify_user(

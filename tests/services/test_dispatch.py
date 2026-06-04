@@ -223,8 +223,10 @@ def test_sms_tool_routes_through_notify_user():
 
 def test_call_tool_with_scheduled_at_enqueues_with_eta():
     # "call me at 6:55" -> claude returns absolute scheduled_at. dispatch
-    # parses + hands to apply_async(eta=...). nothing fires inline.
+    # creates a Task row (PENDING) then hands the task id to apply_async
+    # alongside the message + channel + eta. nothing fires inline.
     from datetime import datetime, timedelta, timezone
+    from uuid import uuid4
     user = _make_user()
     db = MagicMock()
     future = datetime.now(timezone.utc) + timedelta(minutes=7)
@@ -235,18 +237,24 @@ def test_call_tool_with_scheduled_at_enqueues_with_eta():
              "status": "PENDING"}
         ]
     }
+    fake_task = MagicMock(id=uuid4())
 
     with patch("services.dispatch.notify_user_task") as task_mock, \
-         patch("services.dispatch.notify_user") as notify_mock:
+         patch("services.dispatch.notify_user") as notify_mock, \
+         patch("services.dispatch.create_task", return_value=fake_task) as create_mock:
         results = run_plan(plan, user, db)
 
     notify_mock.assert_not_called()
+    # Task row persisted *before* enqueuing -- so the dashboard can show
+    # it as PENDING immediately even if celery is slow to ack the job.
+    create_mock.assert_called_once()
     task_mock.apply_async.assert_called_once()
     kwargs = task_mock.apply_async.call_args.kwargs
-    assert kwargs["args"] == [str(user.id), "reminder", "call"]
+    assert kwargs["args"] == [str(user.id), "reminder", "call", str(fake_task.id)]
     # eta is a tz-aware datetime parsed from the iso string
     assert kwargs["eta"] == future
     assert results[0]["status"] == "scheduled"
+    assert results[0]["task_id"] == str(fake_task.id)
 
 
 def test_call_tool_without_scheduled_at_fires_immediately():

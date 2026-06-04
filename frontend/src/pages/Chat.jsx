@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { sendChatMessage } from '../api';
 import { getUser } from '../auth';
 import TypingIndicator from '../components/TypingIndicator';
@@ -138,8 +138,13 @@ export default function Chat() {
 
         {tasksCreatedCount > 0 && (
           <div className="chat-banner">
-            {tasksCreatedCount} task{tasksCreatedCount === 1 ? '' : 's'} added this session ·{' '}
-            <a href="/tasks">View dashboard →</a>
+            <span className="chat-banner-icon" aria-hidden="true">✓</span>
+            <span className="chat-banner-text">
+              {tasksCreatedCount} task{tasksCreatedCount === 1 ? '' : 's'} added this session
+            </span>
+            <Link to="/tasks" className="chat-banner-link">
+              View dashboard →
+            </Link>
           </div>
         )}
 

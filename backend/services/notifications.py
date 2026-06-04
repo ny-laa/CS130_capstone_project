@@ -59,12 +59,15 @@ def notify_user(
     message: str,
     channel: str | None = None,
     force: bool = False,
+    task_id: Any = None,
 ) -> dict:
     """Send `message` to `user` proactively. Returns a status dict.
 
     channel: "sms" | "call" | None. None -> user.preferred_channel -> "sms".
     force:   bypass the quiet-hours check (use for emergencies / explicit user
              ask, not for routine digests).
+    task_id: optional Task UUID. when set, the outbound message row is linked
+             back to the task so History / Tasks can cross-reference.
 
     The outbound row is logged regardless of whether Twilio actually delivers
     -- A2P verification is still pending and we want the UI to replay the
@@ -106,6 +109,7 @@ def notify_user(
             direction="outbound",
             channel=log_channel,
             user_id=user.id,
+            task_id=task_id,
         )
     except Exception as exc:
         print(f"[notify_user log error] {type(exc).__name__}: {exc}", flush=True)
