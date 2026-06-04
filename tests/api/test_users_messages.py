@@ -79,7 +79,7 @@ def _fake_user(name="Alex Johnson", email="alex@example.com"):
     u.id = uuid4()
     u.phone_number = "+13105550199"
     u.email = email
-    u.name = name
+    u.full_name = name
 
     # ── communication ──────────────────────────────────────────
     u.comm_style = "brief"

@@ -18,7 +18,7 @@ def _make_user(calendar_token="fake-calendar-token"):
     user = MagicMock()
     user.id = uuid4()
     user.phone_number = "+14106522198"
-    user.calendar_token = calendar_token
+    user.google_oauth = {"access_token": calendar_token} if calendar_token else None
     return user
 
 

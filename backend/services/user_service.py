@@ -80,7 +80,7 @@ def create_user(
     user = User(
         phone_number=phone_number,
         email=email,
-        name=name,
+        full_name=name,
         comm_style=comm_style,
         preferred_channel=preferred_channel,
         blocked_windows=blocked_windows,
@@ -125,7 +125,7 @@ def update_user_profile(
         user.email = email
 
     if name is not None:
-        user.name = name
+        user.full_name = name
 
     try:
         db.commit()

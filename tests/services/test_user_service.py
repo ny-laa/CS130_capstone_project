@@ -144,7 +144,7 @@ def test_create_user_persists_full_name(mock_phone, mock_email):
         name="Alex Johnson",
     )
 
-    assert result.name == "Alex Johnson"
+    assert result.full_name == "Alex Johnson"
 
 
 @patch("services.user_service.get_user_by_id")
@@ -160,7 +160,7 @@ def test_update_user_profile_sets_full_name_and_email(mock_get_by_id):
         )
 
     assert result is fake_user
-    assert fake_user.name == "Alex P. Johnson"
+    assert fake_user.full_name == "Alex P. Johnson"
     assert fake_user.email == "new@example.com"
     db.commit.assert_called_once()
 

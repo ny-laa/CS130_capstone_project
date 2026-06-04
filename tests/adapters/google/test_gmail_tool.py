@@ -1,32 +1,36 @@
 # super basic tests for GmailTool
 
 from unittest.mock import MagicMock, patch
+from uuid import uuid4
 import base64
 import pytest
 from backend.adapters.google.gmail_tool import GmailTool
 
 
 def test_execute_requires_access_token():
+    # user_id present but no oauth token stored → ValueError
     tool = GmailTool()
+    db = MagicMock()
 
-    with pytest.raises(ValueError, match="access_token is required"):
-        tool.execute({
-            "operation": "read",
-            "query": "school newer_than:1d",
-        })
+    with patch("backend.adapters.google.gmail_tool.get_access_token", return_value=None):
+        with pytest.raises(ValueError, match="access_token is required"):
+            tool.execute({"operation": "read", "user_id": uuid4(), "query": "test"}, db)
 
 
-def test_execute_routes_read_op(): #just testing basic flow, only read op supported for now 
+def test_execute_routes_read_op():
     tool = GmailTool()
     tool.read = MagicMock(return_value=[])
+    db = MagicMock()
+    user_id = uuid4()
 
-    result = tool.execute({
-        "operation": "read",
-        "access_token": "fake-token",
-        "query": "school newer_than:1d",
-        "max_results": 5,
-        "include_body": False,
-    })
+    with patch("backend.adapters.google.gmail_tool.get_access_token", return_value="fake-token"):
+        result = tool.execute({
+            "operation": "read",
+            "user_id": user_id,
+            "query": "school newer_than:1d",
+            "max_results": 5,
+            "include_body": False,
+        }, db)
 
     assert result == []
     tool.read.assert_called_once_with(
