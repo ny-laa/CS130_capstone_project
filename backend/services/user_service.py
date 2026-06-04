@@ -2,6 +2,7 @@
 # api routes + workers should use this service instead of querying User directly
 # oauth token exchange/refresh will be handled separately in the auth layer since its not fully done yet 
 
+import re
 from uuid import UUID
 from sqlalchemy.orm import Session
 from models.datatypes import (
@@ -41,6 +42,26 @@ _PREFERENCE_FIELDS = (
 )
 
 
+def normalize_phone(phone: str | None) -> str | None:
+    # canonical phone format for storage + lookup is E.164 (+15103246787).
+    # signup form may submit "5103246787" or "(510) 324-6787" while twilio
+    # webhooks always send E.164 -- without normalizing, a user who signs
+    # up without the +1 will look "unregistered" to every inbound sms.
+    # US-centric: 10-digit -> prepend +1, 11-digit starting with 1 -> prepend +.
+    # already E.164 (starts with +) -> pass through. anything else, return as-is
+    # so twilio surfaces a clear error instead of us silently mangling.
+    if not phone:
+        return phone
+    if phone.startswith("+"):
+        return phone
+    digits = re.sub(r"\D", "", phone)
+    if len(digits) == 10:
+        return f"+1{digits}"
+    if len(digits) == 11 and digits.startswith("1"):
+        return f"+{digits}"
+    return phone
+
+
 def get_user_by_id(db: Session, user_id: UUID) -> User | None:
     # Use user UUID to find them
 
@@ -48,9 +69,10 @@ def get_user_by_id(db: Session, user_id: UUID) -> User | None:
 
 
 def get_user_by_phone(db: Session, phone_number: str) -> User | None:
-    # SMS +  voicewebhooks can use this to identify the parent
-
-    return db.query(User).filter(User.phone_number == phone_number).first()
+    # SMS +  voicewebhooks can use this to identify the parent.
+    # normalize so "+15103246787" (twilio) and "5103246787" (signup form)
+    # resolve to the same row.
+    return db.query(User).filter(User.phone_number == normalize_phone(phone_number)).first()
 
 
 def get_user_by_email(db: Session, email: str) -> User | None:
@@ -70,6 +92,8 @@ def create_user(
 
     # handles creation of new parent accoun
     # phoen number is needed since Twilio uses it to match incoming SMS + calls to registered user
+
+    phone_number = normalize_phone(phone_number)
 
     #checking duplicates
     if get_user_by_phone(db, phone_number):
@@ -133,15 +157,17 @@ def update_user_profile(
         # `user.name` would AttributeError.
         user.full_name = name
 
-    if phone_number is not None and phone_number != user.phone_number:
-        if user.phone_number is not None:
-            raise ValueError(
-                "Phone number can't be changed once set. Contact support to re-verify."
-            )
-        clash = get_user_by_phone(db, phone_number)
-        if clash and clash.id != user_id:
-            raise ValueError("A user with this phone number already exists!!")
-        user.phone_number = phone_number
+    if phone_number is not None:
+        phone_number = normalize_phone(phone_number)
+        if phone_number != user.phone_number:
+            if user.phone_number is not None:
+                raise ValueError(
+                    "Phone number can't be changed once set. Contact support to re-verify."
+                )
+            clash = get_user_by_phone(db, phone_number)
+            if clash and clash.id != user_id:
+                raise ValueError("A user with this phone number already exists!!")
+            user.phone_number = phone_number
 
     try:
         db.commit()
