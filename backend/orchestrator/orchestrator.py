@@ -82,7 +82,7 @@ class GOrchestrator:
         else:
             question = f"G needs your approval to run {step.tool}. Open the G app to Approve or Deny."
         task.escalation_question = question
-        sms_tool.execute({"to": to, "message": question})
+        sms_tool.execute({"to": to, "body": question})
 
     def resume_task_from_reply(self, task: Task, approved: bool, tool_registry: dict) -> None:
         if not approved:

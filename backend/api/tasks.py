@@ -14,7 +14,7 @@ from models.datatypes import TaskStatus, Tools
 from orchestrator.orchestrator import GOrchestrator
 from orchestrator.task_planner import PlanStep, StructuredTaskPlan
 from orchestrator.task_planner import Task as InMemoryTask
-from services.task_service import get_task_by_id, update_task_status
+from services.task_service import get_task_by_id, get_tasks_for_user, update_task_status
 from services.user_service import get_user_by_id
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
@@ -52,6 +52,11 @@ def _rebuild_in_memory_task(db_task) -> InMemoryTask:
     return task
 
 
+@router.get("/user/{user_id}")
+def list_tasks(user_id: UUID, limit: int = 50, db: Session = Depends(get_db)):
+    return get_tasks_for_user(db, user_id, limit=limit)
+
+
 @router.post("/{task_id}/approve")
 def approve_task(task_id: UUID, db: Session = Depends(get_db)):
     db_task = get_task_by_id(db, task_id)
@@ -79,7 +84,7 @@ def approve_task(task_id: UUID, db: Session = Depends(get_db)):
     if in_memory.force_overlap:
         db_task.force_overlap = True
         db.commit()
-    update_task_status(db, db_task, in_memory.status)
+    update_task_status(db, db_task.id, in_memory.status)
 
     return {"task_id": str(task_id), "status": in_memory.status}
 
@@ -92,5 +97,5 @@ def deny_task(task_id: UUID, db: Session = Depends(get_db)):
     if db_task.status != TaskStatus.ESCALATION_PENDING:
         raise HTTPException(status_code=409, detail=f"Task is not pending escalation (status={db_task.status})")
 
-    update_task_status(db, db_task, TaskStatus.FAILED)
+    update_task_status(db, db_task.id, TaskStatus.FAILED)
     return {"task_id": str(task_id), "status": TaskStatus.FAILED}

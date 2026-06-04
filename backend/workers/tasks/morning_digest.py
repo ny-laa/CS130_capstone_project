@@ -141,7 +141,7 @@ def send_morning_digest_for_user(
         db=db,
         user=user,
         message=message,
-        force=False,
+        force=True,
     )
 
     result["event_count"] = len(events)

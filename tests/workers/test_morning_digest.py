@@ -110,7 +110,7 @@ def test_digest_reads_calendar_and_notifies_user(mock_notify_user):
 
     mock_notify_user.assert_called_once()
     assert "Pick up kids" in mock_notify_user.call_args.kwargs["message"]
-    assert mock_notify_user.call_args.kwargs["force"] is False
+    assert mock_notify_user.call_args.kwargs["force"] is True
     assert result["status"] == "ok"
     assert result["event_count"] == 1
 

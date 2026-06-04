@@ -46,6 +46,7 @@ class TaskType(str, Enum):
     CALENDAR_UPDATE     = "calendar_update"
     INFORMATION_REQUEST = "information_request"
     MORNING_DIGEST      = "morning_digest"
+    SMALLTALK           = "smalltalk"
 
 
 class MessageDirection(str, Enum):

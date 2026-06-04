@@ -175,7 +175,8 @@ async def inbound_sms(
                 Tools.SMS_TOOL: _sms,
             }
             TaskRunner(tool_registry).run(in_mem)
-            task_service.update_task_status(db, db_task, in_mem.status)
+            task_service.update_task_status(db, db_task.id, in_mem.status)
+            task_service.update_plan_steps(db, db_task.id, in_mem.task_plan.plan_steps)
             if in_mem.status == TaskStatus.ESCALATION_PENDING:
                 _orch.request_escalation_approval(in_mem, _sms, from_number)
                 escalated = True
