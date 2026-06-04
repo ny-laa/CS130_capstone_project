@@ -1,12 +1,15 @@
 # handles the task lifecycle in the db
 # api routes, orchestrator code, celery workers can use these helpers
 
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 from sqlalchemy.orm import Session
 from models.datatypes import TaskStatus, TaskType
 from models.task import Task as DBTask
+
+logger = logging.getLogger("backend.services.task_service")
 
 
 def _get_status(status: TaskStatus | str) -> TaskStatus:
@@ -108,6 +111,9 @@ def create_task(
     except Exception:
         db.rollback()
         raise
+
+
+    logger.info("task_id=%s type=%s user_id=%s created", task.id, task.type, task.user_id)
 
     return task
 

@@ -85,6 +85,7 @@ class MessageDirection(str, Enum):
 class MessageChannel(str, Enum):
     SMS   = "sms"
     VOICE = "voice"
+    CHAT  = "chat"
 
 
 # instead of keeping database class types here, let's move it to sepecific moduels. 

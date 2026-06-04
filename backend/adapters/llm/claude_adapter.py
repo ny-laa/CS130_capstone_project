@@ -37,13 +37,23 @@ class ClaudeAdapter(BaseLLMAdapter):
         )
         self.model = model
 
-    def handle(self, query: str, system_prompt: str|None, context: dict = None) -> dict:
+    def handle(
+        self,
+        query: str,
+        system_prompt: str | None,
+        context: dict = None,
+        history: list[dict] | None = None,
+    ) -> dict:
         # build the user message, optionally prepend context (like calendar data)
         user_message = query
         if context:
             # stick the context at the top so claude sees it before the question
             context_str = json.dumps(context, default=str, indent=2)
             user_message = f"Here is some context:\n{context_str}\n\nRequest: {query}"
+
+        # history is a list of {"role": "user"|"assistant", "content": "..."} from prior turns
+        messages = list(history or [])
+        messages.append({"role": "user", "content": user_message})
 
         response = self.client.messages.create(
             model=self.model,
@@ -53,7 +63,7 @@ class ClaudeAdapter(BaseLLMAdapter):
                 "text": system_prompt or "",
                 "cache_control": {"type": "ephemeral"},
             }],
-            messages=[{"role": "user", "content": user_message}],
+            messages=messages,
         )
 
         # pull the text out of the response
