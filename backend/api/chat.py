@@ -11,7 +11,10 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from adapters.communication.call_tool import OutboundCallTool
 from adapters.communication.sms_tool import SMSTool
+from adapters.communication.user_call_adapter import UserCallAdapter
+from adapters.communication.user_sms_adapter import UserSMSAdapter
 from adapters.google.user_calendar_adapter import UserCalendarAdapter
 from adapters.google.user_gmail_adapter import UserGmailAdapter
 from adapters.llm.claude_adapter import ClaudeAdapter
@@ -32,6 +35,7 @@ logger = logging.getLogger("backend.api.chat")
 
 _llm = ClaudeAdapter(model="claude-haiku-4-5-20251001")
 _sms = SMSTool()
+_call = OutboundCallTool()
 _orch = GOrchestrator()
 
 # [GenAI Use] Prompt: write a chat system prompt for G that matches the sms one — same JSON schema with task_type, description, plan_steps, response_message. chat can be slightly longer than sms, conversational tone. also needs to handle smalltalk as a no-op task type
@@ -50,8 +54,9 @@ Respond with a JSON object only, no extra text:
 }
 
 Use smalltalk when the parent is just chatting and no tools are needed — leave plan_steps empty.
-The current time is provided in the context as current_time_iso.
-Tools you can use: sms_tool, calendar_tool, gmail_tool, call_tool"""
+Tools you can use: sms_tool, calendar_tool, gmail_tool, call_tool
+
+The current time is provided in the context as `current_time_iso` (ISO 8601 with timezone offset). For sms_tool / call_tool, when the parent asks you to reach out *later* -- either an absolute time ("at 5pm", "tomorrow at 8am") OR a relative duration ("in 30 minutes", "in 2 hours") -- set `params.scheduled_at` to the absolute ISO 8601 timestamp (same timezone as `current_time_iso`) when the notification should fire. Examples: if current_time_iso is "2026-05-31T18:48:00-07:00" and the parent says "in 2 minutes", scheduled_at is "2026-05-31T18:50:00-07:00". If they say "at 6:55", it's "2026-05-31T18:55:00-07:00". Omit `scheduled_at` only when the parent wants the action to happen right now."""
 
 # After tools execute, synthesize a natural reply from the results.
 _SYNTHESIS_PROMPT = 'You are G, a helpful AI secretary. Respond with ONLY valid JSON: {"response_message": "<short friendly reply>"}'
@@ -164,6 +169,33 @@ async def chat(body: ChatRequest, request: Request, db: Session = Depends(get_db
 
     logger.info("task path: task_type=%s steps=%d", task_type, len(plan_steps_raw))
 
+    # If any step has scheduled_at, route the whole plan through dispatch.run_plan.
+    # That's the reminders framework: it creates the Task row(s), dedupes/merges
+    # duplicate ETAs, and enqueues notify_user_task with eta= so celery fires the
+    # SMS/call at the right time. TaskRunner doesn't know about scheduling and
+    # would fire immediately, which is the bug we hit before.
+    has_scheduled_step = any(
+        isinstance(s, dict) and (s.get("params") or {}).get("scheduled_at")
+        for s in plan_steps_raw
+    )
+    if user and has_scheduled_step:
+        from services.dispatch import run_plan as dispatch_run_plan
+        logger.info("scheduled step detected — routing via dispatch.run_plan (celery)")
+        try:
+            dispatch_results = dispatch_run_plan(plan, user, db)
+            # grab the task_id dispatch created for the first scheduled step so
+            # the response can point at it (frontend uses task_id for the banner).
+            scheduled_task_id = next(
+                (r.get("task_id") for r in dispatch_results if r.get("task_id")),
+                None,
+            )
+        except Exception as exc:
+            logger.error("dispatch.run_plan failed: %s", exc)
+            scheduled_task_id = None
+            reply = "I ran into a problem scheduling that. Please try again."
+        _persist_assistant_reply(db, user, reply, task_id=None)
+        return _format_response(reply, plan, task_type, task_id=scheduled_task_id, escalated=False)
+
     # create DB task
     db_task = None
     if user:
@@ -200,10 +232,23 @@ async def chat(body: ChatRequest, request: Request, db: Session = Depends(get_db
     )
 
     # wire tool registry — user-scoped adapters so no db needed inside runner
-    tool_registry = {Tools.SMS_TOOL: _sms}
+    # comm tools are per-user so the adapter can inject `to=user.phone_number`
+    # before calling the underlying Twilio client -- claude isn't expected
+    # to know the user's number, so the base SMSTool / OutboundCallTool
+    # KeyError on params["to"] when used directly. UserSMSAdapter /
+    # UserCallAdapter handle the binding. Fall back to the raw singletons
+    # when there's no user (unauthenticated demo); claude shouldn't ever
+    # plan an sms/call step in that mode anyway, but if it does, the raw
+    # tool will surface a clear error instead of a silent failure.
     if user:
-        tool_registry[Tools.CALENDAR_TOOL] = UserCalendarAdapter(user)
-        tool_registry[Tools.GMAIL_TOOL] = UserGmailAdapter(user)
+        tool_registry = {
+            Tools.SMS_TOOL: UserSMSAdapter(user, sms_tool=_sms),
+            Tools.CALL_TOOL: UserCallAdapter(user, call_tool=_call),
+            Tools.CALENDAR_TOOL: UserCalendarAdapter(user),
+            Tools.GMAIL_TOOL: UserGmailAdapter(user),
+        }
+    else:
+        tool_registry = {Tools.SMS_TOOL: _sms, Tools.CALL_TOOL: _call}
 
     escalated = False
     try:
