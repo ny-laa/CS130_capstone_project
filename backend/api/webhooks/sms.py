@@ -7,7 +7,10 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
+from adapters.communication.call_tool import OutboundCallTool
 from adapters.communication.sms_tool import SMSTool
+from adapters.communication.user_call_adapter import UserCallAdapter
+from adapters.communication.user_sms_adapter import UserSMSAdapter
 from adapters.google.user_calendar_adapter import UserCalendarAdapter
 from adapters.llm.claude_adapter import ClaudeAdapter
 from config import TWILIO_AUTH_TOKEN
@@ -29,6 +32,7 @@ router = APIRouter()
 # Module-level singletons — reuse HTTP connection pools across requests.
 _llm = ClaudeAdapter()
 _sms = SMSTool()
+_call = OutboundCallTool()
 _orch = GOrchestrator()
 
 
@@ -133,55 +137,79 @@ async def inbound_sms(
         plan = {}
         reply = "Sorry, I had trouble with that. Try again?"
 
-    # save task so approve/deny endpoints can find it by id
-    db_task = None
-    if plan.get("task_type") and plan.get("description"):
-        try:
-            db_task = task_service.create_task(
-                db,
-                user_id=user.id,
-                task_type=plan["task_type"],
-                description=plan["description"],
-                plan_steps=plan.get("plan_steps", []),
-            )
-        except Exception as exc:
-            print(f"[sms persist error] {type(exc).__name__}: {exc}", flush=True)
+    # If any step has scheduled_at, route via dispatch.run_plan -- it handles
+    # task row creation, dedup of duplicate ETAs, and Celery enqueue with
+    # eta=. TaskRunner doesn't know about scheduling and would fire the
+    # SMS/call immediately, which defeats "remind me at 2:30pm".
+    plan_steps_raw = plan.get("plan_steps") or []
+    has_scheduled_step = any(
+        isinstance(s, dict) and (s.get("params") or {}).get("scheduled_at")
+        for s in plan_steps_raw
+    )
 
-    # run steps through TaskRunner so calendar conflicts pause for parent approval
     escalated = False
-    if plan.get("plan_steps") and db_task is not None:
+    db_task = None
+    if has_scheduled_step:
+        from services.dispatch import run_plan as dispatch_run_plan
         try:
-            steps = [
-                PlanStep(tool=s["tool"], params=s.get("params", {}), status=TaskStatus.PENDING)
-                for s in plan["plan_steps"]
-            ]
-            plan_obj = StructuredTaskPlan(
-                task_type=plan["task_type"],
-                description=plan["description"],
-                plan_steps=steps,
-                response_message=reply,
-            )
-            in_mem = InMemoryTask(
-                id=db_task.id,
-                user_id=user.id,
-                status=TaskStatus.PENDING,
-                task_plan=plan_obj,
-                escalation_deadline=None,
-                created_at=None,
-                updated_at=None,
-            )
-            tool_registry = {
-                Tools.CALENDAR_TOOL: UserCalendarAdapter(user),
-                Tools.SMS_TOOL: _sms,
-            }
-            TaskRunner(tool_registry).run(in_mem)
-            task_service.update_task_status(db, db_task.id, in_mem.status)
-            task_service.update_plan_steps(db, db_task.id, in_mem.task_plan.plan_steps)
-            if in_mem.status == TaskStatus.ESCALATION_PENDING:
-                _orch.request_escalation_approval(in_mem, _sms, from_number)
-                escalated = True
+            dispatch_run_plan(plan, user, db)
         except Exception as exc:
-            print(f"[runner error] {type(exc).__name__}: {exc}", flush=True)
+            print(f"[sms dispatch error] {type(exc).__name__}: {exc}", flush=True)
+    else:
+        # save task so approve/deny endpoints can find it by id
+        if plan.get("task_type") and plan.get("description"):
+            try:
+                db_task = task_service.create_task(
+                    db,
+                    user_id=user.id,
+                    task_type=plan["task_type"],
+                    description=plan["description"],
+                    plan_steps=plan_steps_raw,
+                )
+            except Exception as exc:
+                print(f"[sms persist error] {type(exc).__name__}: {exc}", flush=True)
+
+        # run steps through TaskRunner so calendar conflicts pause for parent approval
+        if plan_steps_raw and db_task is not None:
+            try:
+                steps = [
+                    PlanStep(tool=s["tool"], params=s.get("params", {}), status=TaskStatus.PENDING)
+                    for s in plan_steps_raw
+                ]
+                plan_obj = StructuredTaskPlan(
+                    task_type=plan["task_type"],
+                    description=plan["description"],
+                    plan_steps=steps,
+                    response_message=reply,
+                )
+                in_mem = InMemoryTask(
+                    id=db_task.id,
+                    user_id=user.id,
+                    status=TaskStatus.PENDING,
+                    task_plan=plan_obj,
+                    escalation_deadline=None,
+                    created_at=None,
+                    updated_at=None,
+                )
+                # Comm tools are per-user so the adapter injects `to=user.phone_number`
+                # before hitting Twilio -- claude isn't given the user's phone, so
+                # the base tools KeyError on params["to"]. CALL_TOOL is registered
+                # alongside SMS even on the SMS surface because claude can pick
+                # call_tool when the user texts "call me at 6pm" or has
+                # preferred_channel="call".
+                tool_registry = {
+                    Tools.CALENDAR_TOOL: UserCalendarAdapter(user),
+                    Tools.SMS_TOOL: UserSMSAdapter(user, sms_tool=_sms),
+                    Tools.CALL_TOOL: UserCallAdapter(user, call_tool=_call),
+                }
+                TaskRunner(tool_registry).run(in_mem)
+                task_service.update_task_status(db, db_task.id, in_mem.status)
+                task_service.update_plan_steps(db, db_task.id, in_mem.task_plan.plan_steps)
+                if in_mem.status == TaskStatus.ESCALATION_PENDING:
+                    _orch.request_escalation_approval(in_mem, _sms, from_number)
+                    escalated = True
+            except Exception as exc:
+                print(f"[runner error] {type(exc).__name__}: {exc}", flush=True)
 
     if not escalated:
         try:
