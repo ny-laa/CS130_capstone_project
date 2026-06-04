@@ -160,7 +160,7 @@ def test_update_user_profile_sets_full_name_and_email(mock_get_by_id):
         )
 
     assert result is fake_user
-    assert fake_user.name == "Alex P. Johnson"
+    assert fake_user.full_name == "Alex P. Johnson"
     assert fake_user.email == "new@example.com"
     db.commit.assert_called_once()
 
@@ -201,8 +201,9 @@ def test_update_user_profile_allows_same_email_for_same_user(mock_get_by_id):
 
 # Asked Claude to generate the following test for the oauth integration
 
+@patch("services.user_service.encrypt_token", side_effect=lambda x: x)
 @patch("services.user_service.get_user_by_id")
-def test_save_google_oauth(mock_get_by_id):
+def test_save_google_oauth(mock_get_by_id, mock_encrypt):
     db = MagicMock()
     fake_user = MagicMock()
     fake_user.google_oauth = {}
@@ -245,8 +246,9 @@ def test_save_google_oauth_keeps_existing_refresh_token_if_none_provided(mock_ge
     assert fake_user.google_oauth["refresh_token"] == "existing-refresh-token"
 
 
+@patch("services.user_service.decrypt_token", side_effect=lambda x: x)
 @patch("services.user_service.get_user_by_id")
-def test_get_google_oauth_returns_tokens(mock_get_by_id):
+def test_get_google_oauth_returns_tokens(mock_get_by_id, mock_decrypt):
     db = MagicMock()
     fake_user = MagicMock()
     fake_user.google_oauth = {
@@ -268,9 +270,11 @@ def test_get_google_oauth_raises_if_user_not_found(mock_get_by_id):
         get_google_oauth(MagicMock(), uuid4())
 
 
+@patch("services.user_service.encrypt_token", side_effect=lambda x: x)
+@patch("services.user_service.decrypt_token", side_effect=lambda x: x)
 @patch("services.user_service.httpx.post")
 @patch("services.user_service.get_user_by_id")
-def test_refresh_token_updates_access_token(mock_get_by_id, mock_post):
+def test_refresh_token_updates_access_token(mock_get_by_id, mock_post, mock_decrypt, mock_encrypt):
     db = MagicMock()
     fake_user = MagicMock()
     fake_user.google_oauth = {
@@ -302,9 +306,10 @@ def test_refresh_token_raises_if_no_refresh_token(mock_get_by_id):
         refresh_token(MagicMock(), uuid4())
 
 
+@patch("services.user_service.decrypt_token", side_effect=lambda x: x)
 @patch("services.user_service.refresh_token")
 @patch("services.user_service.get_user_by_id")
-def test_get_access_token_returns_valid_token(mock_get_by_id, mock_refresh):
+def test_get_access_token_returns_valid_token(mock_get_by_id, mock_refresh, mock_decrypt):
     # token not expired yet — should return existing token without refreshing
     db = MagicMock()
     fake_user = MagicMock()

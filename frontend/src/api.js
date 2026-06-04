@@ -167,11 +167,11 @@ export async function getTasks() {
 }
 
 export async function approveEscalation(taskId) {
-  console.log('POST /api/tasks/' + taskId + '/approve');
+  return apiFetch(`/api/tasks/${taskId}/approve`, { method: 'POST' });
 }
 
 export async function denyEscalation(taskId) {
-  console.log('POST /api/tasks/' + taskId + '/deny');
+  return apiFetch(`/api/tasks/${taskId}/deny`, { method: 'POST' });
 }
 
 const MOCK_TASK_HISTORY = [

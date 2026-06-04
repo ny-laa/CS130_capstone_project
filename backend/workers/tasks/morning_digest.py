@@ -113,7 +113,8 @@ def send_morning_digest_for_user(
     
     # note that notify_user handles preferred channel, quiet hours, Twilio sending, and outbound message logging already 
 
-    if not user.calendar_token:
+    access_token = (user.google_oauth or {}).get("access_token")
+    if not access_token:
         return {
             "status": "skipped_missing_calendar_token",
             "event_count": 0,
@@ -126,7 +127,7 @@ def send_morning_digest_for_user(
     )
 
     events = tool.read(
-        access_token=user.calendar_token,
+        access_token=access_token,
         time_min=time_min,
         time_max=time_max,
         max_results=50,
@@ -141,7 +142,7 @@ def send_morning_digest_for_user(
         db=db,
         user=user,
         message=message,
-        force=False,
+        force=True,
     )
 
     result["event_count"] = len(events)
@@ -159,7 +160,7 @@ def send_morning_digests_task() -> dict:
     with session_scope() as db: #open up a new db sesh 
         users = (
             db.query(User)
-            .filter(User.calendar_token.isnot(None))
+            .filter(User.google_oauth.isnot(None))
             .all()
         )
 

@@ -126,7 +126,7 @@ def update_user_profile(
         user.email = email
 
     if name is not None:
-        user.name = name
+        user.full_name = name
 
     try:
         db.commit()

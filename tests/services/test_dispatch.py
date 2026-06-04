@@ -9,15 +9,14 @@ from services.dispatch import TOOL_REGISTRY, run_plan
 
 
 def _make_user():
-    # user with both google tokens set, individual tests override fields
+    # user with google_oauth set; dispatch injects user_id into params, not raw tokens
     u = MagicMock()
     u.id = uuid4()
-    u.calendar_token = "cal-tok"
-    u.gmail_token = "gmail-tok"
+    u.google_oauth = {"access_token": "cal-tok"}
     return u
 
 
-def test_calendar_step_injects_access_token():
+def test_calendar_step_injects_user_id():
     user = _make_user()
     cal_mock = MagicMock()
     cal_mock.execute.return_value = [{"id": "evt_1"}]
@@ -31,13 +30,12 @@ def test_calendar_step_injects_access_token():
         results = run_plan(plan, user)
 
     call_params = cal_mock.execute.call_args[0][0]
-    assert call_params["access_token"] == "cal-tok"  # injected from user
+    assert call_params["user_id"] == user.id  # dispatch injects user_id for DB token lookup
     assert call_params["operation"] == "read"  # original params preserved
     assert results[0]["status"] == "ok"
 
 
-def test_gmail_step_injects_gmail_token():
-    # gmail_tool should get gmail_token specifically, not calendar_token
+def test_gmail_step_injects_user_id():
     user = _make_user()
     gmail_mock = MagicMock()
     plan = {
@@ -49,7 +47,7 @@ def test_gmail_step_injects_gmail_token():
     with patch.dict(TOOL_REGISTRY, {"gmail_tool": gmail_mock}):
         run_plan(plan, user)
 
-    assert gmail_mock.execute.call_args[0][0]["access_token"] == "gmail-tok"
+    assert gmail_mock.execute.call_args[0][0]["user_id"] == user.id
 
 
 def test_sms_step_no_token_injection():
@@ -71,9 +69,9 @@ def test_sms_step_no_token_injection():
 
 
 def test_missing_calendar_token_no_injection():
-    # if user has no calendar_token yet (oauth not done), don't inject None
+    # if user has no google_oauth yet (oauth not done), user_id still injected; adapter raises
     user = _make_user()
-    user.calendar_token = None
+    user.google_oauth = None
     cal_mock = MagicMock()
     plan = {
         "plan_steps": [
@@ -85,6 +83,7 @@ def test_missing_calendar_token_no_injection():
         run_plan(plan, user)
 
     assert "access_token" not in cal_mock.execute.call_args[0][0]
+    assert cal_mock.execute.call_args[0][0]["user_id"] == user.id  # user_id always injected
 
 
 def test_unknown_tool_skipped_not_raised():
@@ -164,7 +163,7 @@ def test_caller_plan_not_mutated():
     with patch.dict(TOOL_REGISTRY, {"calendar_tool": cal_mock}):
         run_plan(plan, user)
 
-    assert "access_token" not in plan["plan_steps"][0]["params"]
+    assert "user_id" not in plan["plan_steps"][0]["params"]  # dispatch copies params, never mutates caller's dict
 # [GenAI Use] LLM Response End
 # [GenAI Use] Reflection: this one i never would have thought to write. caught
 # it would matter when claude pointed out we log the full plan dict in webhook
@@ -319,7 +318,7 @@ def test_multiple_steps_in_order():
     user = _make_user()
     call_order = []
     cal_mock = MagicMock()
-    cal_mock.execute.side_effect = lambda p: call_order.append("cal")
+    cal_mock.execute.side_effect = lambda p, db=None: call_order.append("cal")
     sms_mock = MagicMock()
     sms_mock.execute.side_effect = lambda p: call_order.append("sms")
     plan = {

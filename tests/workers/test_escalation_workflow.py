@@ -55,7 +55,7 @@ def test_request_escalation_approval_sends_app_directed_sms_and_sets_question():
     orch.request_escalation_approval(task=task, sms_tool=mock_sms, to="+11234567890")
 
     mock_sms.execute.assert_called_once()
-    call_msg = mock_sms.execute.call_args[0][0]["message"].lower()
+    call_msg = mock_sms.execute.call_args[0][0]["body"].lower()
     assert "approve" in call_msg or "deny" in call_msg
     assert "app" in call_msg or "open" in call_msg or "g.ai" in call_msg
 
@@ -194,7 +194,7 @@ def test_orchestrator_communicates_conflict_to_parent():
     orch.request_escalation_approval(task=task, sms_tool=mock_sms, to="+11234567890")
 
     mock_sms.execute.assert_called_once()
-    call_msg = mock_sms.execute.call_args[0][0]["message"].lower()
+    call_msg = mock_sms.execute.call_args[0][0]["body"].lower()
     assert "conflict" in call_msg or "busy" in call_msg or "scheduled" in call_msg
     assert "approve" in call_msg or "deny" in call_msg
     assert task.escalation_question

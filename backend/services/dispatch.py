@@ -134,6 +134,7 @@ def run_plan(plan: dict, user: User, db: Session | None = None) -> list[dict]:
                 result = adapter.execute(params, db)
             else:
                 result = adapter.execute(params)
+            results.append({"tool": tool_name, "status": "ok", "result": result})
         except Exception as exc:
             print(f"[dispatch] {tool_name} failed: {type(exc).__name__}: {exc}", flush=True)
             results.append({"tool": tool_name, "status": "error", "error": str(exc)})

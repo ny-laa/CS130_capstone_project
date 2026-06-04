@@ -6,7 +6,7 @@
 
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from models.datatypes import (
     CallUrgency,
@@ -86,6 +86,7 @@ class UserResponse(BaseModel):
     id: UUID
     phone_number: str | None
     email: str | None
+    name: str | None = None  # maps from User.full_name (Python attr for the "name" DB column)
 
     # ── communication ──────────────────────────────────────────
     comm_style: CommStyle
@@ -112,5 +113,15 @@ class UserResponse(BaseModel):
     tone: Tone
     reminder_lead_time_minutes: int
     conflict_handling: ConflictHandling
+
+    @model_validator(mode="before")
+    @classmethod
+    def _map_full_name(cls, data):
+        if hasattr(data, "full_name"):
+            # ORM object: full_name is the Python attr for the "name" DB column
+            obj = {f: getattr(data, f, None) for f in cls.model_fields if f != "name"}
+            obj["name"] = getattr(data, "full_name", None)
+            return obj
+        return data
 
     model_config = {"from_attributes": True}
