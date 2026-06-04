@@ -28,20 +28,42 @@ function titleCase(s) {
     .join(' ');
 }
 
+// If a PENDING task's scheduled_at is more than this far in the past,
+// we treat it as failed for display. Tasks that were scheduled but the
+// Celery worker never ran (or was offline at the time) pile up as
+// PENDING in the DB; without this they'd look like active to-dos
+// forever. 5 min slack absorbs the normal eta tolerance + brief worker
+// downtime.
+const PAST_DUE_GRACE_MS = 5 * 60 * 1000;
+
 function toCardTask(t) {
   const firstStep = Array.isArray(t.plan_steps) ? t.plan_steps[0] : null;
   const stepParams = firstStep?.params || {};
   const stepMessage = stepParams.body || stepParams.message || '';
 
+  // Past-due PENDING -> display as FAILED so it bubbles into the Issues
+  // group. DB stays at PENDING (truthful: maybe the worker will catch
+  // up); this is a render-time override only.
+  let displayStatus = t.status;
+  let pastDue = false;
+  if (t.status === 'PENDING' && stepParams.scheduled_at) {
+    const scheduledMs = Date.parse(stepParams.scheduled_at);
+    if (!Number.isNaN(scheduledMs) && Date.now() - scheduledMs > PAST_DUE_GRACE_MS) {
+      displayStatus = 'FAILED';
+      pastDue = true;
+    }
+  }
+
   let summary = null;
-  if (t.status === 'COMPLETED' && stepMessage) summary = `Sent: "${stepMessage}"`;
+  if (pastDue) summary = 'Scheduled time passed without firing. Worker may have been offline.';
+  else if (t.status === 'COMPLETED' && stepMessage) summary = `Sent: "${stepMessage}"`;
   else if (t.status === 'FAILED') summary = 'Delivery failed. Check logs.';
 
   return {
     id: t.id,
     description: t.description,
     type: titleCase(t.type),
-    status: t.status,
+    status: displayStatus,
     createdAt: t.created_at,
     summary,
   };
