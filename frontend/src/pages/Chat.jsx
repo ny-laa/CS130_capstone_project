@@ -83,7 +83,15 @@ export default function Chat() {
     }
 
     try {
-      const { reply, tasks_created } = await sendChatMessage(userId, trimmed);
+      // Pass the in-session message history so the backend can use it
+      // as fallback Claude context when the user isn't logged in. When
+      // logged in the backend pulls history from the DB and ignores
+      // this; we send it either way to keep the contract uniform.
+      const history = [...messages, userMsg].map((m) => ({
+        role: m.role,
+        content: m.content,
+      }));
+      const { reply, tasks_created } = await sendChatMessage(userId, trimmed, history);
 
       const assistantMsg = {
         id: `msg-${Date.now() + 1}`,
@@ -109,7 +117,7 @@ export default function Chat() {
     } finally {
       setTyping(false);
     }
-  }, [typing, userId]);
+  }, [messages, typing, userId]);
 
   function handleKeyDown(e) {
     if (e.key === 'Enter' && !e.shiftKey) {

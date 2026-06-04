@@ -37,16 +37,35 @@ export async function login(email, password) {
   });
 }
 
-// browser chat -- semantically identical to texting G. backend runs the
-// same conversation pipeline used for real SMS: logs inbound + outbound
-// with channel="sms" (so chat shows in History indistinguishably from
-// real texts), runs Claude, dispatches plan_steps (which persist Task
-// rows for scheduled outbound), and returns {reply, tasks_created}.
-export async function sendChatMessage(userId, message) {
-  return apiFetch(`/api/users/${userId}/chat`, {
+// Browser chat. Calls Elliot's POST /api/chat which runs the full
+// orchestrator path (Claude -> TaskRunner with calendar/gmail/sms
+// adapters -> escalation -> synthesis pass on tool results). Backend
+// persists messages with channel="chat" and creates Task rows for any
+// non-smalltalk plan.
+//
+// Backend response is {reply, task_id, escalated} where `reply` may
+// have an embedded <task> XML block (legacy compat with parseTaskBlock).
+// We strip that here and normalize to {reply, tasks_created, escalated}
+// so Chat.jsx can keep its existing render path.
+export async function sendChatMessage(userId, message, history = []) {
+  const data = await apiFetch('/api/chat', {
     method: 'POST',
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({
+      message,
+      user_id: userId,
+      // full in-session history -- backend uses it as fallback context
+      // when the user isn't logged in. when logged in the backend pulls
+      // history from the DB and ignores this field.
+      messages: history,
+    }),
   });
+  const raw = data.reply || '';
+  const cleanReply = raw.replace(/<task>[\s\S]*?<\/task>/, '').trim() || raw;
+  return {
+    reply: cleanReply,
+    tasks_created: data.task_id ? [data.task_id] : [],
+    escalated: !!data.escalated,
+  };
 }
 
 // re-fetch the backend's view of a user. used after onboarding writes to
