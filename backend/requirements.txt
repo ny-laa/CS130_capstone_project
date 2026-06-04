@@ -35,7 +35,12 @@ pydantic
 pydantic-settings
 
 #auth
+# passlib 1.7.4 was written against bcrypt 3.x; bcrypt 4.x dropped a couple
+# attrs (__about__) and tightened the 72-byte limit to a hard ValueError
+# during passlib's startup self-test, so passlib never initializes. Pin
+# below 4 until passlib ships a release that handles it.
 passlib[bcrypt]
+bcrypt<4
 python-jose[cryptography]
 #explicit -- transitive via python-jose[cryptography] today, but pinned
 #here because utils.token_crypto imports fernet/MultiFernet directly.

@@ -30,7 +30,10 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:5174"],
+    # any localhost port -- Vite auto-increments past 5173 if that's busy,
+    # and we don't want to chase ports in this file every time. regex
+    # matches http(s)://localhost:<digits>.
+    allow_origin_regex=r"https?://localhost:\d+",
     allow_methods=["*"],
     allow_headers=["*"],
 )
