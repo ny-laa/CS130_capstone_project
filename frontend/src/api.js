@@ -1,6 +1,8 @@
 import { getToken } from './auth';
 
-const API_BASE = '';
+// Local dev: empty string -> vite proxies /api/* to localhost backend.
+// Prod (Vercel): VITE_API_BASE_URL points at the Railway backend URL.
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
 function authHeaders(extra = {}) {
   const token = getToken();

@@ -1,7 +1,9 @@
 // axios base instance, all api calls go thru here
 // sets base url to backend, handles errors in one place
 
-const BASE = '/api';
+// Local dev: '/api' -> vite proxies to localhost backend.
+// Prod (Vercel): VITE_API_BASE_URL + '/api' hits the Railway backend.
+const BASE = `${import.meta.env.VITE_API_BASE_URL || ''}/api`;
 
 export async function apiFetch(path, options = {}) {
     const res = await fetch(`${BASE}${path}`, {
