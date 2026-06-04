@@ -50,6 +50,14 @@ class Settings(BaseSettings):
     JWT_SECRET: str = "change-me-in-production"
     JWT_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
 
+    #token-at-rest crypto -- url-safe base64-encoded 32-byte fernet key(s).
+    #comma-separated for rotation: newest first, older keys retained so
+    #MultiFernet can still decrypt legacy ciphertext until re-encrypted.
+    #generate with: utils.token_crypto.generate_key()
+    #MUST be set in any non-dev env. dev default below is NOT secret -- it
+    #only exists so local tests + alembic can import cleanly without a .env.
+    TOKEN_ENCRYPTION_KEY: str = "dev-only-insecure-key-please-override-in-env"
+
     #misc
     APP_ENV: str = "development"  #dev | staging | prod
     LOG_LEVEL: str = "INFO"

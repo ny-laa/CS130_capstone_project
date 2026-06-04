@@ -37,6 +37,9 @@ pydantic-settings
 #auth
 passlib[bcrypt]
 python-jose[cryptography]
+#explicit -- transitive via python-jose[cryptography] today, but pinned
+#here because utils.token_crypto imports fernet/MultiFernet directly.
+cryptography
 
 #testing
 pytest

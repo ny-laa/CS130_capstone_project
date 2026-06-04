@@ -1,37 +1,37 @@
 # super basic tests for GmailTool
 
 from unittest.mock import MagicMock, patch
-from uuid import uuid4
 import base64
 import pytest
-from backend.adapters.google.gmail_tool import GmailTool
+from uuid import uuid4
+from adapters.google.gmail_tool import GmailTool
 
 
-def test_execute_requires_access_token():
-    # user_id present but no oauth token stored → ValueError
+@patch("adapters.google.gmail_tool.get_access_token")
+def test_execute_requires_user_id(mock_get_token):
     tool = GmailTool()
     db = MagicMock()
+    with pytest.raises(ValueError, match="user_id needed"):
+        tool.execute({
+            "operation": "read",
+            "query": "school newer_than:1d"
+        }, db)
 
-    with patch("backend.adapters.google.gmail_tool.get_access_token", return_value=None):
-        with pytest.raises(ValueError, match="access_token is required"):
-            tool.execute({"operation": "read", "user_id": uuid4(), "query": "test"}, db)
 
-
-def test_execute_routes_read_op():
+# had claude patch test after changes
+@patch("adapters.google.gmail_tool.get_access_token")
+def test_execute_routes_read_op(mock_get_token):
+    mock_get_token.return_value = "fake-token"
     tool = GmailTool()
     tool.read = MagicMock(return_value=[])
     db = MagicMock()
-    user_id = uuid4()
-
-    with patch("backend.adapters.google.gmail_tool.get_access_token", return_value="fake-token"):
-        result = tool.execute({
-            "operation": "read",
-            "user_id": user_id,
-            "query": "school newer_than:1d",
-            "max_results": 5,
-            "include_body": False,
-        }, db)
-
+    result = tool.execute({
+        "operation": "read",
+        "user_id": uuid4(),
+        "query": "school newer_than:1d",
+        "max_results": 5,
+        "include_body": False,
+    }, db)
     assert result == []
     tool.read.assert_called_once_with(
         access_token="fake-token",
@@ -63,7 +63,7 @@ def test_decode_body_data():
     assert result == original_text
 
 
-@patch("backend.adapters.google.gmail_tool.build")
+@patch("adapters.google.gmail_tool.build")
 def test_read_simplifies_emails(mock_build):
     # mock Gmail service chain:
     fake_service = MagicMock()

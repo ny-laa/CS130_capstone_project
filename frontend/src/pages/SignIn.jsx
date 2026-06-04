@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { isLoggedIn, setToken, setUser } from '../auth';
 import { login } from '../api';
+import GoogleSignOn from '../components/registration/GoogleAuthButton';
 
 export default function SignIn() {
   const navigate = useNavigate();
@@ -69,7 +70,10 @@ export default function SignIn() {
             {submitting ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
-
+        <div className="auth-google">
+          <span>or</span>
+        </div>
+        <GoogleSignOn/>
         <p className="signup-footer">
           Don't have an account?{' '}
           <Link to="/signup" className="link-btn">Sign up</Link>

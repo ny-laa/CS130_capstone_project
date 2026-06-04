@@ -16,6 +16,7 @@ from models.user import User
 from datetime import datetime, timedelta
 import httpx
 from config import settings
+from utils.token_crypto import encrypt_token, decrypt_token
 
 
 # fields update_user_preferences will overlay onto the user row. ordering
@@ -183,10 +184,19 @@ def save_google_oauth(
     if user is None:
         raise ValueError("User not found")
 
+    #encrypt at rest -- access_token always; refresh_token only when we
+    #actually got a fresh one back. if the caller didn't supply a new
+    #refresh_token we preserve the existing (already-encrypted) value
+    #verbatim so we don't double-wrap on every refresh cycle.
     existing = user.google_oauth or {}
+    refresh_ct = (
+        encrypt_token(refresh_token)
+        if refresh_token
+        else existing.get("refresh_token")
+    )
     user.google_oauth = {
-        "access_token": access_token,
-        "refresh_token": refresh_token or existing.get("refresh_token"),
+        "access_token": encrypt_token(access_token),
+        "refresh_token": refresh_ct,
         "expiry": expiry,
     }
 
@@ -204,7 +214,17 @@ def get_google_oauth(db: Session, user_id: UUID) -> dict | None:
     user = get_user_by_id(db, user_id)
     if user is None:
         raise ValueError("User not found")
-    return user.google_oauth
+    #decrypt on read -- callers (calendar/gmail adapters) expect plaintext.
+    #expiry stays plaintext so get_access_token can compare without a
+    #decrypt round-trip on every call.
+    blob = user.google_oauth
+    if not blob:
+        return blob
+    return {
+        "access_token": decrypt_token(blob.get("access_token")),
+        "refresh_token": decrypt_token(blob.get("refresh_token")),
+        "expiry": blob.get("expiry"),
+    }
 
 
 def delete_user(db: Session, user_id: UUID) -> bool:
@@ -231,28 +251,34 @@ def refresh_token(db: Session, user_id: UUID) -> str:
     # error handling
     if user is None:
         raise ValueError("user not found")
-    
+
     oauth = user.google_oauth
     if not oauth or not oauth.get("refresh_token"):
         raise ValueError("no refresh token found")
-    
+
+    #decrypt before sending to google; the stored value is ciphertext.
+    refresh_plain = decrypt_token(oauth["refresh_token"])
+
     response = httpx.post(
         "https://oauth2.googleapis.com/token",
         data={
             "client_id": settings.GOOGLE_CLIENT_ID,
             "client_secret": settings.GOOGLE_CLIENT_SECRET,
-            "refresh_token": oauth["refresh_token"],
+            "refresh_token": refresh_plain,
             "grant_type": "refresh_token",
         },
     )
 
     if response.status_code != 200:
         raise ValueError("token refresh failed")
-    
+
     token = response.json()
     expire = datetime.utcnow() + timedelta(seconds = token["expires_in"])
+    #re-encrypt the new access_token; refresh_token is already ciphertext
+    #(google's refresh response doesn't return a new one) so we keep the
+    #existing blob verbatim and skip a redundant decrypt/encrypt cycle.
     user.google_oauth = {
-        "access_token": token["access_token"],
+        "access_token": encrypt_token(token["access_token"]),
         "refresh_token": oauth["refresh_token"],
         "expiry": expire.isoformat(),
     }
@@ -262,7 +288,7 @@ def refresh_token(db: Session, user_id: UUID) -> str:
         db.refresh(user)
     except Exception:
         raise
-    
+
     return token["access_token"]
 
 def get_access_token(db: Session, user_id: UUID) -> str:
@@ -270,14 +296,16 @@ def get_access_token(db: Session, user_id: UUID) -> str:
     # error handling
     if user is None:
         raise ValueError("user not found")
-    
+
     oauth = user.google_oauth
     if not oauth or not oauth.get("refresh_token"):
         raise ValueError("no refresh token found")
-    
+
     expire = datetime.fromisoformat(oauth["expiry"])
     # refresh 10 minutes in advance
     if datetime.utcnow() >= expire - timedelta(minutes=10):
         return refresh_token(db, user_id)
-    
-    return oauth["access_token"]
+
+    #stored ciphertext -- decrypt to give callers plaintext, matching
+    #the contract refresh_token() returns above.
+    return decrypt_token(oauth["access_token"])
