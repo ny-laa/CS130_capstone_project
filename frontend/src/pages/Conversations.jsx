@@ -4,39 +4,68 @@ import { getMessages } from '../api';
 import { getUser } from '../auth';
 import MessageBubble from '../components/MessageBubble';
 
-// [GenAI Use] Prompt: "Conversations.jsx used to render mock task-grouped
-// history plus a 'From Chat' section pulled from TaskContext. Replace
-// with a flat list of real messages from GET /api/users/{id}/messages,
-// rendered with MessageBubble (already keyed off direction + channel +
-// content + timestamp). Backend returns newest first; reverse them so
-// the conversation reads top-down chronologically. Group into per-day
-// sections with date headers."
+// [GenAI Use] Prompt: "Conversations.jsx used to render a flat
+// chronological message list grouped by day, which made it hard to
+// browse later. Group consecutive messages into sessions (a single
+// call, a single SMS thread, a single chat session) using two heuristics:
+// (1) channel boundary -- voice <-> sms ends a session; (2) gap > 30
+// minutes ends a session. Render each session as its own card with a
+// channel badge (Call vs SMS, since browser chat is logged with
+// channel='sms' too), a relative header (Today / Yesterday / dated),
+// and the messages inside chronologically. Sort sessions newest-first
+// by their first message."
 // [GenAI Use] LLM Response Start
 
-function formatDayHeader(iso) {
-  const d = new Date(iso);
-  const today = new Date();
-  const yesterday = new Date(today);
-  yesterday.setDate(today.getDate() - 1);
+// 30 minutes of inactivity = next message starts a new session. Tuned
+// for human chat cadence -- short enough that the morning thread doesn't
+// merge with the evening thread, long enough that thinking-of-a-reply
+// pauses don't artificially split a single back-and-forth.
+const SESSION_GAP_MS = 30 * 60 * 1000;
 
-  if (d.toDateString() === today.toDateString()) return 'Today';
-  if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
-  return d.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
+function formatSessionHeader(iso) {
+  const d = new Date(iso);
+  const now = new Date();
+  const today = now.toDateString();
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+
+  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (d.toDateString() === today) return `Today · ${time}`;
+  if (d.toDateString() === yesterday.toDateString()) return `Yesterday · ${time}`;
+  return d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) + ` · ${time}`;
 }
 
-function groupByDay(messages) {
-  // assumes chronological input (oldest first)
-  const groups = [];
+function channelLabel(channel) {
+  if (channel === 'voice') return { icon: '📞', label: 'Call' };
+  // SMS bucket includes the browser Chat tab (logged with channel='sms').
+  return { icon: '💬', label: 'SMS' };
+}
+
+// Walk chronological messages, break into sessions on channel change or
+// long gap. Returns sessions in chronological order; caller reverses for
+// newest-first display.
+function groupIntoSessions(messages) {
+  const sessions = [];
   let current = null;
   for (const m of messages) {
-    const day = new Date(m.timestamp).toDateString();
-    if (!current || current.day !== day) {
-      current = { day, label: formatDayHeader(m.timestamp), messages: [] };
-      groups.push(current);
+    const ts = new Date(m.timestamp).getTime();
+    const sameChannel = current && current.channel === m.channel;
+    const withinGap = current && ts - current.lastTs <= SESSION_GAP_MS;
+    if (current && sameChannel && withinGap) {
+      current.messages.push(m);
+      current.lastTs = ts;
+    } else {
+      current = {
+        id: m.id, // first message id stands in as a stable session key
+        channel: m.channel,
+        startedAt: m.timestamp,
+        lastTs: ts,
+        messages: [m],
+      };
+      sessions.push(current);
     }
-    current.messages.push(m);
   }
-  return groups;
+  return sessions;
 }
 
 export default function Conversations() {
@@ -55,7 +84,9 @@ export default function Conversations() {
     getMessages(user.id, 200)
       .then((rows) => {
         if (cancelled) return;
-        // backend returns DESC for fast pagination; humans read top-down
+        // backend returns DESC for fast pagination; we want chronological
+        // for the grouping algorithm. We'll reverse session order at the
+        // render step.
         setMessages([...rows].reverse());
         setLoading(false);
       })
@@ -67,7 +98,8 @@ export default function Conversations() {
     return () => { cancelled = true; };
   }, [navigate]);
 
-  const groups = groupByDay(messages);
+  // newest session first; messages within each session stay chronological
+  const sessions = groupIntoSessions(messages).reverse();
 
   return (
     <div className="page">
@@ -77,25 +109,40 @@ export default function Conversations() {
       {!loading && !error && messages.length === 0 && (
         <p className="task-empty">No messages yet. Start a chat or text G.</p>
       )}
-      {groups.map((g) => (
-        <section key={g.day} className="history-day">
-          <h2 className="section-title">{g.label}</h2>
-          <div className="chat-log">
-            {g.messages.map((m) => (
-              <MessageBubble key={m.id} message={m} />
-            ))}
-          </div>
-        </section>
-      ))}
+      <div className="history-list">
+        {sessions.map((s) => {
+          const { icon, label } = channelLabel(s.channel);
+          return (
+            <section key={s.id} className="history-item history-item--open">
+              <div className="history-item-header" style={{ cursor: 'default' }}>
+                <div className="history-item-meta">
+                  <div className="history-item-details">
+                    <span className="badge badge-channel">{icon} {label}</span>
+                    <span className="badge badge-status">{s.messages.length} message{s.messages.length === 1 ? '' : 's'}</span>
+                  </div>
+                  <p className="history-item-timestamps">{formatSessionHeader(s.startedAt)}</p>
+                </div>
+              </div>
+              <div className="history-item-body">
+                <div className="chat-log chat-log--compact">
+                  {s.messages.map((m) => (
+                    <MessageBubble key={m.id} message={m} />
+                  ))}
+                </div>
+              </div>
+            </section>
+          );
+        })}
+      </div>
     </div>
   );
 }
 // [GenAI Use] LLM Response End
-// [GenAI Use] Reflection: dropped the per-task expandable wrapper that
-// the mock had -- linking messages back to their parent task can come
-// later via the task_id field on each row (already populated for
-// scheduled-outbound rows). The flat per-day grouping is the floor;
-// we can layer task grouping on top once the audit log has enough rows
-// to know how dense it gets. The reverse() is intentional: the API
-// returns DESC for fast pagination, but humans read conversations
-// top-down chronologically.
+// [GenAI Use] Reflection: kept the grouping heuristic in a pure helper
+// so it's testable in isolation later. The two-rule cutoff (channel
+// boundary + 30-minute gap) handles the demo cases: a single back-and-
+// forth call shows as one card, a chat session shows as one card, and
+// if the user texts G in the morning and again in the evening they get
+// two SMS cards instead of one mega-thread. If/when we add an explicit
+// session_id column to messages this collapses into one-line grouping
+// by that id -- but inference works fine until then.
