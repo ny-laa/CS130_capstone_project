@@ -11,6 +11,7 @@ from database import session_scope
 from models.datatypes import TaskStatus
 from services.notifications import notify_user
 from services.task_service import (
+    get_task_by_id,
     mark_task_complete,
     mark_task_failed,
     update_task_status,
@@ -65,6 +66,26 @@ def notify_user_task(
             except Exception as exc:
                 print(
                     f"[notify_user_task in_progress] {type(exc).__name__}: {exc}",
+                    flush=True,
+                )
+
+            # If dispatch merged additional reminders into this task after
+            # we got scheduled, the latest combined body lives on the Task
+            # row's plan_steps -- not in the Celery args we were enqueued
+            # with. Prefer the DB version so the SMS that actually goes
+            # out reflects every merge.
+            try:
+                t = get_task_by_id(db, task_uuid)
+                if t and isinstance(t.plan_steps, list) and t.plan_steps:
+                    first = t.plan_steps[0]
+                    if isinstance(first, dict):
+                        p = first.get("params") or {}
+                        latest = p.get("body") or p.get("message")
+                        if latest:
+                            message = latest
+            except Exception as exc:
+                print(
+                    f"[notify_user_task read_latest] {type(exc).__name__}: {exc}",
                     flush=True,
                 )
 

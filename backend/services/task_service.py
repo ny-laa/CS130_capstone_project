@@ -138,6 +138,39 @@ def get_tasks_for_user(
     )
 
 
+def find_pending_scheduled_task(
+    db: Session,
+    user_id: UUID,
+    scheduled_at_iso: str,
+    tool_name: str,
+) -> DBTask | None:
+    """Find a PENDING task that's scheduled to fire at exactly the same
+    ISO timestamp via the same tool (sms_tool / call_tool). Used by
+    dispatch to merge duplicate reminders rather than enqueueing two
+    Celery jobs that both fire at the same moment.
+
+    Filters in Python instead of with a JSONB query so the lookup stays
+    portable across sqlite (used in tests) and postgres. PENDING set
+    per user is small in practice (single digits), so the cost is fine.
+    """
+    pending = (
+        db.query(DBTask)
+        .filter(DBTask.user_id == user_id, DBTask.status == TaskStatus.PENDING)
+        .all()
+    )
+    for t in pending:
+        steps = t.plan_steps if isinstance(t.plan_steps, list) else None
+        if not steps:
+            continue
+        first = steps[0]
+        if not isinstance(first, dict) or first.get("tool") != tool_name:
+            continue
+        params = first.get("params") or {}
+        if params.get("scheduled_at") == scheduled_at_iso:
+            return t
+    return None
+
+
 def get_tasks_by_status(
     db: Session,
     status: TaskStatus | str,
