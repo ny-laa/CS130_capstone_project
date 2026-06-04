@@ -31,10 +31,14 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    # any localhost port -- Vite auto-increments past 5173 if that's busy,
-    # and we don't want to chase ports in this file every time. regex
-    # matches http(s)://localhost:<digits>.
-    allow_origin_regex=r"https?://localhost:\d+",
+    # localhost:<port>  -> dev (vite auto-increments past 5173, don't chase ports)
+    # *.vercel.app      -> prod + preview deploys on vercel
+    # FRONTEND_ORIGIN env var -> optional override for a custom domain
+    allow_origin_regex=(
+        rf"https?://localhost:\d+"
+        rf"|https://([a-z0-9-]+\.)*vercel\.app"
+        + (rf"|{os.environ['FRONTEND_ORIGIN']}" if os.environ.get("FRONTEND_ORIGIN") else "")
+    ),
     allow_methods=["*"],
     allow_headers=["*"],
 )
