@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 from uuid import uuid4
 from fastapi.testclient import TestClient
 
-from models.datatypes import TaskStatus
+from backend.models.datatypes import TaskStatus
 
 # shared fixtures
 

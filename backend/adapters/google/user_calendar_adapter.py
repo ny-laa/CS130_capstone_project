@@ -4,8 +4,8 @@
 # used to check for avaliability from the actual google calendar. 
 
 from typing import Any
-from backend.adapters.base import BaseToolAdapter
-from backend.adapters.google.calendar_tool import CalendarTool
+from adapters.base import BaseToolAdapter
+from adapters.google.calendar_tool import CalendarTool
 
 
 class UserCalendarAdapter(BaseToolAdapter):

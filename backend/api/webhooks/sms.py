@@ -8,14 +8,20 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
 from adapters.communication.sms_tool import SMSTool
+from adapters.google.user_calendar_adapter import UserCalendarAdapter
 from adapters.llm.claude_adapter import ClaudeAdapter
 from config import TWILIO_AUTH_TOKEN
 from database import get_db
 from middleware.twilio_signature import validate_twilio_signature
-from services import dispatch, task_service
+from models.datatypes import TaskStatus, Tools
+from orchestrator.orchestrator import GOrchestrator
+from orchestrator.task_planner import PlanStep, StructuredTaskPlan
+from orchestrator.task_planner import Task as InMemoryTask
+from services import task_service
 from services.message_service import log_message
 from services.user_service import get_user_by_phone
 from services.user_context_service import build_user_context
+from workers.task_runner import TaskRunner
 
 
 router = APIRouter()
@@ -23,6 +29,7 @@ router = APIRouter()
 # Module-level singletons — reuse HTTP connection pools across requests.
 _llm = ClaudeAdapter()
 _sms = SMSTool()
+_orch = GOrchestrator()
 
 
 # TODO: swap with the deployed signup URL once the frontend ships.
@@ -126,10 +133,11 @@ async def inbound_sms(
         plan = {}
         reply = "Sorry, I had trouble with that. Try again?"
 
-    # save task so the frontend and approve/deny endpoints can look it up by id
+    # save task so approve/deny endpoints can find it by id
+    db_task = None
     if plan.get("task_type") and plan.get("description"):
         try:
-            task_service.create_task(
+            db_task = task_service.create_task(
                 db,
                 user_id=user.id,
                 task_type=plan["task_type"],
@@ -139,28 +147,50 @@ async def inbound_sms(
         except Exception as exc:
             print(f"[sms persist error] {type(exc).__name__}: {exc}", flush=True)
 
-    # Run any plan_steps claude generated (calendar/gmail/etc). Tokens get
-    # injected from `user` inside dispatch -- never via the LLM. Dispatch
-    # errors don't 5xx the webhook (twilio retries on 5xx, we don't want that).
-    if plan.get("plan_steps"):
+    # run steps through TaskRunner so calendar conflicts pause for parent approval
+    escalated = False
+    if plan.get("plan_steps") and db_task is not None:
         try:
-            dispatch.run_plan(plan, user, db)
+            steps = [
+                PlanStep(tool=s["tool"], params=s.get("params", {}), status=TaskStatus.PENDING)
+                for s in plan["plan_steps"]
+            ]
+            plan_obj = StructuredTaskPlan(
+                task_type=plan["task_type"],
+                description=plan["description"],
+                plan_steps=steps,
+                response_message=reply,
+            )
+            in_mem = InMemoryTask(
+                id=db_task.id,
+                user_id=user.id,
+                status=TaskStatus.PENDING,
+                task_plan=plan_obj,
+                escalation_deadline=None,
+                created_at=None,
+                updated_at=None,
+            )
+            tool_registry = {
+                Tools.CALENDAR_TOOL: UserCalendarAdapter(user),
+                Tools.SMS_TOOL: _sms,
+            }
+            TaskRunner(tool_registry).run(in_mem)
+            task_service.update_task_status(db, db_task, in_mem.status)
+            if in_mem.status == TaskStatus.ESCALATION_PENDING:
+                _orch.request_escalation_approval(in_mem, _sms, from_number)
+                escalated = True
         except Exception as exc:
-            print(f"[dispatch error] {type(exc).__name__}: {exc}", flush=True)
+            print(f"[runner error] {type(exc).__name__}: {exc}", flush=True)
 
-    # Fire the reply via SMSTool. Wrap so an outbound failure (e.g. A2P not yet
-    # approved) doesn't 500 the webhook — twilio just retries on 5xx.
-    try:
-        _sms.send(to=from_number, body=reply)
-    except Exception as exc:
-        print(f"[sms send error] {type(exc).__name__}: {exc}", flush=True)
-
-    # Log outbound regardless of send success -- a2p-rejected sends still
-    # show in the UI so we can demo end-to-end while twilio verification is pending.
-    try:
-        log_message(db, content=reply, direction="outbound", channel="sms", user_id=user.id)
-    except Exception as exc:
-        print(f"[sms outbound log error] {type(exc).__name__}: {exc}", flush=True)
+    if not escalated:
+        try:
+            _sms.send(to=from_number, body=reply)
+        except Exception as exc:
+            print(f"[sms send error] {type(exc).__name__}: {exc}", flush=True)
+        try:
+            log_message(db, content=reply, direction="outbound", channel="sms", user_id=user.id)
+        except Exception as exc:
+            print(f"[sms outbound log error] {type(exc).__name__}: {exc}", flush=True)
 
     # Architecture: webhook stays thin, return empty TwiML 200.
     return Response(
