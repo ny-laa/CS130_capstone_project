@@ -27,8 +27,14 @@ from adapters.communication.call_tool import OutboundCallTool
 from adapters.communication.sms_tool import SMSTool
 from adapters.google.calendar_tool import CalendarTool
 from adapters.google.gmail_tool import GmailTool
+from models.datatypes import TaskType
 from models.user import User
 from services.notifications import notify_user
+from services.task_service import (
+    create_task,
+    find_pending_scheduled_task,
+    update_plan_steps,
+)
 from workers.tasks.notifications import notify_user_task
 
 
@@ -98,14 +104,74 @@ def run_plan(plan: dict, user: User, db: Session | None = None) -> list[dict]:
                             f"[dispatch] scheduled_at {scheduled_at_raw} is in the past, firing now",
                             flush=True,
                         )
+                    # If there's already a PENDING task scheduled for this
+                    # exact same moment + tool, merge into it instead of
+                    # creating a second one. Two Celery jobs firing at the
+                    # same instant cause duplicate notifications + race
+                    # conditions; one job that sends a combined body is
+                    # what the user actually wants.
+                    body_key = "body" if tool_name == "sms_tool" else "message"
+                    existing = find_pending_scheduled_task(
+                        db, user.id, eta.isoformat(), tool_name
+                    )
+                    if existing is not None:
+                        existing_step = (existing.plan_steps or [{}])[0]
+                        existing_params = existing_step.get("params") or {}
+                        existing_body = (
+                            existing_params.get("body")
+                            or existing_params.get("message")
+                            or ""
+                        )
+                        merged_body = (
+                            f"{existing_body}\n{message}" if existing_body else message
+                        )
+                        merged_step = {
+                            **existing_step,
+                            "params": {**existing_params, body_key: merged_body},
+                        }
+                        update_plan_steps(db, existing.id, [merged_step])
+                        # also update the dashboard description so the user
+                        # sees "2 reminders combined" instead of just the
+                        # first one's body.
+                        new_count = existing_body.count("\n") + 2  # original + this one
+                        existing.description = (
+                            f"Reminder at {eta.strftime('%b %-d, %-I:%M %p')}: "
+                            f"{new_count} reminders combined"
+                        )
+                        db.commit()
+                        results.append({
+                            "tool": tool_name,
+                            "status": "merged_into_existing",
+                            "scheduled_at": eta.isoformat(),
+                            "task_id": str(existing.id),
+                        })
+                        continue
+                    # No duplicate -- persist a fresh Task row so the
+                    # Tasks page can show this immediately as PENDING.
+                    # The celery worker drives the rest of the lifecycle
+                    # (IN_PROGRESS on entry, COMPLETED or FAILED on exit)
+                    # and links the eventual outbound message row via
+                    # task_id so it shows in History too.
+                    description = (
+                        f"Reminder at {eta.strftime('%b %-d, %-I:%M %p')}: "
+                        f"{message[:80]}"
+                    )
+                    task = create_task(
+                        db,
+                        user_id=user.id,
+                        task_type=TaskType.REMINDER,
+                        description=description,
+                        plan_steps=[step],
+                    )
                     notify_user_task.apply_async(
-                        args=[str(user.id), message, channel],
+                        args=[str(user.id), message, channel, str(task.id)],
                         eta=eta,
                     )
                     results.append({
                         "tool": tool_name,
                         "status": "scheduled",
                         "scheduled_at": eta.isoformat(),
+                        "task_id": str(task.id),
                     })
                 else:
                     result = notify_user(

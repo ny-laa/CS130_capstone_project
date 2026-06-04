@@ -1,19 +1,20 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { isLoggedIn, getUser, setUser } from '../../auth';
+import { updateProfile, createFamilyMember, fetchUser } from '../../api';
 import ProgressBar from '../../components/ProgressBar';
 import FamilyMemberRow from '../../components/FamilyMemberRow';
 
+// [GenAI Use] Prompt: "Step1Family used to gate on a localStorage key
+// (g_onboard) that the new password-signup flow doesn't set, so users
+// bounced back to /signup -> /tasks and skipped onboarding entirely.
+// Drop the g_onboard guard; the backend user from signup is already in
+// localStorage as g_user. On Continue, PATCH /api/users/{id} with the
+// phone (first-time set) and any name change, then POST each family
+// member to /api/users/{id}/family-members. Refresh the local g_user
+// from the backend before navigating to step 2 so subsequent screens
+// see the canonical state."
 // [GenAI Use] LLM Response Start
-// Name + phone fields (validated), family members list using 
-// FamilyMemberRow component
-// [GenAI Use] LLM Response End
-// [GenAI Use] Reflection: Phone validation uses HTML required attribute
-// which blocks submit on empty input. Family members are optional - 
-// user can proceed with zero members added. Each member uses 
-// FamilyMemberRow which has name input + relation dropdown + remove 
-// button. Data is saved to g_onboard in localStorage before navigating 
-// to step 2 so it persists across steps. Confirmed ProgressBar shows 
-// step 1 of 2.
 
 export default function Step1Family() {
   const navigate = useNavigate();
@@ -21,18 +22,26 @@ export default function Step1Family() {
   const [phone, setPhone] = useState('');
   const [members, setMembers] = useState([]);
   const [errors, setErrors] = useState({});
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
 
   useEffect(() => {
-    const saved = localStorage.getItem('g_onboard');
-    if (!saved) { navigate('/signup', { replace: true }); return; }
-    const data = JSON.parse(saved);
-    if (data.name) setName(data.name);
-    if (data.phone) setPhone(data.phone);
-    if (data.familyMembers?.length) setMembers(data.familyMembers.map((m) => ({ phone_number: '', ...m })));
+    if (!isLoggedIn()) {
+      navigate('/signin?next=/onboard/step1', { replace: true });
+      return;
+    }
+    // hydrate name from the backend user we got at signup; phone is blank
+    // because register() doesn't take a phone yet -- user fills it here.
+    const u = getUser();
+    if (u?.name) setName(u.name);
+    if (u?.phone_number) setPhone(u.phone_number);
   }, [navigate]);
 
   function addMember() {
-    setMembers((ms) => [...ms, { id: Date.now(), name: '', relation: '', phone_number: '' }]);
+    setMembers((ms) => [
+      ...ms,
+      { id: Date.now(), name: '', relation: '', phone_number: '' },
+    ]);
   }
 
   function updateMember(id, updated) {
@@ -43,20 +52,53 @@ export default function Step1Family() {
     setMembers((ms) => ms.filter((m) => m.id !== id));
   }
 
-  function handleContinue() {
+  async function handleContinue() {
+    if (submitting) return;
     const errs = {};
     if (!name.trim()) errs.name = 'Name is required';
     if (!phone.trim()) errs.phone = 'Phone number is required';
     if (Object.keys(errs).length) { setErrors(errs); return; }
 
-    const saved = JSON.parse(localStorage.getItem('g_onboard') || '{}');
-    localStorage.setItem('g_onboard', JSON.stringify({
-      ...saved,
-      name: name.trim(),
-      phone: phone.trim(),
-      familyMembers: members.filter((m) => m.name.trim()),
-    }));
-    navigate('/onboard/step2');
+    setErrors({});
+    setSubmitError('');
+    setSubmitting(true);
+    try {
+      const user = getUser();
+      if (!user?.id) throw new Error('Session expired -- please sign in again.');
+
+      // 1. update profile (name + phone). backend ignores no-op fields.
+      const profilePatch = {};
+      if (name.trim() !== user.name) profilePatch.name = name.trim();
+      if (phone.trim() && phone.trim() !== user.phone_number) {
+        profilePatch.phone_number = phone.trim();
+      }
+      if (Object.keys(profilePatch).length > 0) {
+        await updateProfile(user.id, profilePatch);
+      }
+
+      // 2. POST each family member with a non-empty name. one at a time
+      // since the row count is tiny and per-row errors are easier to
+      // surface than a bulk failure.
+      const valid = members.filter((m) => m.name.trim());
+      for (const m of valid) {
+        await createFamilyMember(user.id, {
+          name: m.name.trim(),
+          relation: m.relation.trim() || null,
+          phone_number: m.phone_number.trim() || null,
+        });
+      }
+
+      // 3. pull canonical user state back into localStorage so step 2
+      // (and Profile, eventually) reads the updated record.
+      const refreshed = await fetchUser(user.id);
+      setUser(refreshed);
+
+      navigate('/onboard/step2');
+    } catch (err) {
+      setSubmitError(err.message || 'Could not save profile. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -103,8 +145,23 @@ export default function Step1Family() {
       </section>
 
       <div className="onboard-footer">
-        <button className="btn btn-brand" onClick={handleContinue}>Continue →</button>
+        {submitError && <span className="error-msg">{submitError}</span>}
+        <button
+          className="btn btn-brand"
+          onClick={handleContinue}
+          disabled={submitting}
+        >
+          {submitting ? 'Saving…' : 'Continue →'}
+        </button>
       </div>
     </div>
   );
 }
+// [GenAI Use] LLM Response End
+// [GenAI Use] Reflection: kept the per-row POST loop sequential rather
+// than Promise.all because if one row fails with a 422 (e.g. a missing
+// name) we want everything before it persisted, not an indeterminate
+// in-flight state. The user has to retry the same screen anyway and the
+// duplicate-name check is the backend's problem, not ours. Decided not
+// to roll back successfully-created members on a later failure -- the
+// Profile page (when wired) will let the user remove any duds.

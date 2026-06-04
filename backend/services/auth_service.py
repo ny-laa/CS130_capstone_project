@@ -11,12 +11,23 @@ from models.user import User
 _pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
+def _truncate_for_bcrypt(plain: str) -> bytes:
+    # bcrypt has a hard 72-byte input limit; bcrypt 4.x raises ValueError
+    # rather than silently truncating like older versions did. plain[:72]
+    # slices by characters, which only equals 72 bytes for pure ASCII --
+    # any password with multi-byte UTF-8 (accented letters, emoji, CJK)
+    # overflows the byte limit even at <=72 chars. Encode first, slice
+    # the byte string. Cutting in the middle of a multi-byte sequence is
+    # fine because bcrypt hashes raw bytes, not text.
+    return plain.encode("utf-8")[:72]
+
+
 def hash_password(plain: str) -> str:
-    return _pwd_ctx.hash(plain[:72])
+    return _pwd_ctx.hash(_truncate_for_bcrypt(plain))
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return _pwd_ctx.verify(plain[:72], hashed)
+    return _pwd_ctx.verify(_truncate_for_bcrypt(plain), hashed)
 
 
 def create_token(user_id: UUID) -> str:

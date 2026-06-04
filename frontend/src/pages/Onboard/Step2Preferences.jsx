@@ -1,26 +1,29 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { setUser } from '../../auth';
+import { isLoggedIn, getUser, setUser } from '../../auth';
+import { updatePreferences, fetchUser } from '../../api';
 import ProgressBar from '../../components/ProgressBar';
 import Toggle from '../../components/Toggle';
 import TimePicker from '../../components/TimePicker';
 
+// [GenAI Use] Prompt: "Step2Preferences used to merge step1 localStorage
+// data with prefs and write it all to g_user, clobbering the backend user
+// (with its real id). Drop the g_onboard guard, drop the overwrite. On
+// Activate, PATCH /api/users/{id}/preferences with the backend-shape
+// payload (snake_case fields, mapped enums), then GET /api/users/{id} and
+// store the result. Navigate to /tasks. Map the digest content options
+// to the backend's DigestContent enum -- the third option (`+ Emails +
+// Tasks`) is collapsed to `calendar+tasks` until the backend learns the
+// triple combo."
 // [GenAI Use] LLM Response Start
-// All preference toggles. "Activate G" logs payload, saves merged 
-// data to g_user, navigates to /profile
-// [GenAI Use] LLM Response End
-// [GenAI Use] Reflection: On "Activate G" click, this step merges 
-// g_onboard data from step 1 with preferences from step 2 into a 
-// single object and saves to g_user via setUser() from auth.js. 
-// The g_onboard key is then no longer needed. Verified the payload 
-// is logged to console which is useful for debugging before real 
-// backend is connected. Confirmed NavBar is hidden on /onboard/* 
-// routes per App.jsx.
 
+// Backend DigestContent enum only has 'calendar', 'calendar+email',
+// 'calendar+tasks' -- no triple combo. Frontend triple-option label is
+// kept for UI continuity; we map it to 'calendar+tasks' at send time.
 const DIGEST_OPTS = [
   { value: 'calendar', label: 'Calendar only' },
   { value: 'calendar+email', label: '+ Emails' },
-  { value: 'calendar+email+tasks', label: '+ Emails + Tasks' },
+  { value: 'calendar+tasks', label: '+ Tasks' },
 ];
 
 const REMINDER_OPTS = [
@@ -57,25 +60,97 @@ const DEFAULT_PREFS = {
   conflictHandling: 'suggest',
 };
 
+// Map frontend prefs (camelCase, UI shape) to the backend's
+// UserPreferencesUpdate payload (snake_case, enum values). Backend silently
+// ignores unknown keys, but we keep the mapping explicit so a wrong key
+// is caught here, not server-side.
+function toBackendPrefs(p) {
+  const payload = {};
+
+  if (p.communicationStyle) payload.comm_style = p.communicationStyle;
+  if (p.preferredContact) {
+    // frontend uses 'text'; backend enum is 'sms'.
+    payload.preferred_channel = p.preferredContact === 'text' ? 'sms' : 'call';
+  }
+  if (p.callUrgencyThreshold) payload.call_urgency_threshold = p.callUrgencyThreshold;
+
+  // wrap the form's start/end pair into the JSONB list shape the backend
+  // expects ({start_time, end_time}) so the notify_user quiet-hours check
+  // can read it without a converter.
+  if (p.quietHoursStart && p.quietHoursEnd) {
+    payload.blocked_windows = [
+      { start_time: p.quietHoursStart, end_time: p.quietHoursEnd },
+    ];
+  }
+  if (p.keepFreeStart && p.keepFreeEnd) {
+    payload.keep_free_windows = [
+      { start_time: p.keepFreeStart, end_time: p.keepFreeEnd },
+    ];
+  }
+  if (Array.isArray(p.activeDays)) payload.active_days = p.activeDays;
+
+  if (typeof p.morningDigest === 'boolean') payload.morning_digest_enabled = p.morningDigest;
+  if (p.digestTime) payload.morning_digest_time = p.digestTime;
+  if (p.digestContent) payload.morning_digest_content = p.digestContent;
+  if (typeof p.digestTravelTime === 'boolean') payload.morning_digest_travel_time = p.digestTravelTime;
+
+  if (Number.isFinite(p.escalationTimeoutMinutes)) {
+    payload.escalation_timeout_minutes = p.escalationTimeoutMinutes;
+  }
+  if (typeof p.autoApproveLowRisk === 'boolean') payload.auto_approve_low_risk = p.autoApproveLowRisk;
+  if (Number.isFinite(p.maxReminders)) payload.max_reminders = p.maxReminders;
+
+  if (p.tone) payload.tone = p.tone;
+  // reminderLeadTime is a string of minutes in the UI; backend wants int.
+  if (p.reminderLeadTime) {
+    const n = parseInt(p.reminderLeadTime, 10);
+    if (Number.isFinite(n)) payload.reminder_lead_time_minutes = n;
+  }
+  if (p.conflictHandling) payload.conflict_handling = p.conflictHandling;
+
+  return payload;
+}
+
 export default function Step2Preferences() {
   const navigate = useNavigate();
   const [prefs, setPrefs] = useState(DEFAULT_PREFS);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
 
   useEffect(() => {
-    if (!localStorage.getItem('g_onboard')) navigate('/signup', { replace: true });
+    if (!isLoggedIn()) {
+      navigate('/signin?next=/onboard/step2', { replace: true });
+    }
   }, [navigate]);
 
   function setPref(key, val) {
     setPrefs((p) => ({ ...p, [key]: val }));
   }
 
-  function handleActivate() {
-    const step1 = JSON.parse(localStorage.getItem('g_onboard') || '{}');
-    const user = { ...step1, preferences: prefs, bannerDismissed: false };
-    console.log('G activation payload:', user);
-    setUser(user);
-    localStorage.removeItem('g_onboard');
-    navigate('/profile');
+  async function handleActivate() {
+    if (submitting) return;
+    setSubmitError('');
+    const user = getUser();
+    if (!user?.id) {
+      setSubmitError('Session expired -- please sign in again.');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const payload = toBackendPrefs(prefs);
+      if (Object.keys(payload).length > 0) {
+        await updatePreferences(user.id, payload);
+      }
+      // refresh canonical user state so downstream pages see the saved prefs.
+      const refreshed = await fetchUser(user.id);
+      setUser({ ...refreshed, bannerDismissed: false });
+      navigate('/tasks');
+    } catch (err) {
+      setSubmitError(err.message || 'Could not save preferences. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -183,8 +258,22 @@ export default function Step2Preferences() {
       </section>
 
       <div className="onboard-footer">
-        <button className="btn btn-brand" onClick={handleActivate}>Activate G</button>
+        {submitError && <span className="error-msg">{submitError}</span>}
+        <button
+          className="btn btn-brand"
+          onClick={handleActivate}
+          disabled={submitting}
+        >
+          {submitting ? 'Activating…' : 'Activate G'}
+        </button>
       </div>
+      {/* [GenAI Use] LLM Response End */}
+      {/* [GenAI Use] Reflection: kept the partial-success behavior of
+          PATCH /preferences -- if some fields fail backend validation,
+          others still save. The refresh via fetchUser pulls whatever the
+          server actually accepted so the UI doesn't show a delta from
+          reality. Skipped Promise.all between the patch and refresh
+          because the refresh has to see the patched state. */}
     </div>
   );
 }

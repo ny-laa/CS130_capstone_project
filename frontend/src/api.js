@@ -37,6 +37,120 @@ export async function login(email, password) {
   });
 }
 
+// Browser chat. Calls Elliot's POST /api/chat which runs the full
+// orchestrator path (Claude -> TaskRunner with calendar/gmail/sms
+// adapters -> escalation -> synthesis pass on tool results). Backend
+// persists messages with channel="chat" and creates Task rows for any
+// non-smalltalk plan.
+//
+// Backend response is {reply, task_id, escalated} where `reply` may
+// have an embedded <task> XML block (legacy compat with parseTaskBlock).
+// We strip that here and normalize to {reply, tasks_created, escalated}
+// so Chat.jsx can keep its existing render path.
+export async function sendChatMessage(userId, message, history = []) {
+  const data = await apiFetch('/api/chat', {
+    method: 'POST',
+    body: JSON.stringify({
+      message,
+      user_id: userId,
+      // full in-session history -- backend uses it as fallback context
+      // when the user isn't logged in. when logged in the backend pulls
+      // history from the DB and ignores this field.
+      messages: history,
+    }),
+  });
+  const raw = data.reply || '';
+  const cleanReply = raw.replace(/<task>[\s\S]*?<\/task>/, '').trim() || raw;
+  return {
+    reply: cleanReply,
+    tasks_created: data.task_id ? [data.task_id] : [],
+    escalated: !!data.escalated,
+  };
+}
+
+// re-fetch the backend's view of a user. used after onboarding writes to
+// pull the canonical state into localStorage instead of mutating
+// fields ad-hoc and risking drift.
+export async function fetchUser(userId) {
+  return apiFetch(`/api/users/${userId}`);
+}
+
+// PATCH name/email/phone_number. phone_number is settable only when the
+// user's current phone is null (first-time onboarding); the backend rejects
+// a swap on an already-set phone.
+export async function updateProfile(userId, patch) {
+  return apiFetch(`/api/users/${userId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  });
+}
+
+// PATCH preferences. `patch` must use the backend's snake_case keys --
+// see UserPreferencesUpdate in backend/schemas/user.py. Step2Preferences
+// maps the form state into this shape before calling.
+export async function updatePreferences(userId, patch) {
+  return apiFetch(`/api/users/${userId}/preferences`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  });
+}
+
+// POST one family member. Step1Family loops over the user's added rows
+// and calls this per row -- the backend doesn't currently expose a bulk
+// endpoint and the row count in practice is single digits.
+export async function createFamilyMember(userId, member) {
+  return apiFetch(`/api/users/${userId}/family-members`, {
+    method: 'POST',
+    body: JSON.stringify(member),
+  });
+}
+
+export async function listFamilyMembers(userId) {
+  return apiFetch(`/api/users/${userId}/family-members`);
+}
+
+export async function deleteFamilyMember(userId, memberId) {
+  return apiFetch(`/api/users/${userId}/family-members/${memberId}`, {
+    method: 'DELETE',
+  });
+}
+
+// contacts: third parties G might call/text on the user's behalf.
+export async function listContacts(userId) {
+  return apiFetch(`/api/users/${userId}/contacts`);
+}
+
+export async function createContact(userId, contact) {
+  return apiFetch(`/api/users/${userId}/contacts`, {
+    method: 'POST',
+    body: JSON.stringify(contact),
+  });
+}
+
+export async function deleteContact(userId, contactId) {
+  return apiFetch(`/api/users/${userId}/contacts/${contactId}`, {
+    method: 'DELETE',
+  });
+}
+
+// providers: doctors / lawyers / preferred service providers.
+export async function listProviders(userId) {
+  return apiFetch(`/api/users/${userId}/providers`);
+}
+
+export async function createProvider(userId, provider) {
+  return apiFetch(`/api/users/${userId}/providers`, {
+    method: 'POST',
+    body: JSON.stringify(provider),
+  });
+}
+
+export async function deleteProvider(userId, providerId) {
+  return apiFetch(`/api/users/${userId}/providers/${providerId}`, {
+    method: 'DELETE',
+  });
+}
+
 // All API calls go here. Mocked for now — replace individual functions with real fetch calls when backend is ready.
 // [GenAI Use] LLM Response Start
 // Added sendMessage() which calls Anthropic API or falls back to
@@ -145,12 +259,23 @@ export async function saveUser(data) {
   console.log('POST /api/users/me', data);
 }
 
+// kept for any callers still pointing at the old mock task-history view --
+// not used by the live Conversations page anymore (see getMessages below).
 export async function getTaskHistory() {
   return MOCK_TASK_HISTORY;
 }
 
-export async function getTasks() {
-  return MOCK_TASKS;
+// real backend fetch -- TaskResponse rows newest first.
+// shape: { id, status, type, description, plan_steps, escalation_deadline,
+//          created_at, updated_at }
+export async function getTasks(userId, limit = 50) {
+  return apiFetch(`/api/users/${userId}/tasks?limit=${limit}`);
+}
+
+// real backend fetch for the History page -- message audit log newest first.
+// shape: { id, content, direction, channel, timestamp, task_id, user_id }
+export async function getMessages(userId, limit = 200) {
+  return apiFetch(`/api/users/${userId}/messages?limit=${limit}`);
 }
 
 export async function approveEscalation(taskId) {

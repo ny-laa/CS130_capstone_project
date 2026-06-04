@@ -1453,6 +1453,51 @@ body {
   margin: 0;
 }
 
+/* slim notification strip between the chat header and the message list.
+   shows when scheduling reminders during the session so the user sees
+   the side effect without a modal or toast. */
+.chat-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 20px;
+  background: #f0f7ff;
+  border-bottom: 1px solid #dbeafe;
+  font-size: 13px;
+  color: #1a1a2e;
+  flex-shrink: 0;
+}
+
+.chat-banner-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #3b5bdb;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.chat-banner-text {
+  flex: 1;
+  color: #1a1a2e;
+}
+
+.chat-banner-link {
+  color: #3b5bdb;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.chat-banner-link:hover {
+  text-decoration: underline;
+}
+
 .chat-messages {
   flex: 1;
   overflow-y: auto;

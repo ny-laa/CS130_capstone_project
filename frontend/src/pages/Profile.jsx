@@ -1,20 +1,35 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getUser as loadUser, setUser as persistUser, isLoggedIn } from '../auth';
+import { isLoggedIn, getUser as getCachedUser, setUser as cacheUser } from '../auth';
+import {
+  fetchUser,
+  updateProfile,
+  updatePreferences,
+  listFamilyMembers,
+  createFamilyMember,
+  deleteFamilyMember,
+  listContacts,
+  createContact,
+  deleteContact,
+  listProviders,
+  createProvider,
+  deleteProvider,
+} from '../api';
 import Toggle from '../components/Toggle';
 import TimePicker from '../components/TimePicker';
 import Banner from '../components/Banner';
+
+// [GenAI Use] Prompt: "Profile.jsx used to read a hand-crafted mock user
+// object from localStorage with nested .preferences, .familyMembers,
+// .contacts, .providers. The real backend returns a flat snake_case
+// UserResponse and serves family/contacts/providers from separate list
+// endpoints. Rewrite: on mount fetch user + 3 lists in parallel, map
+// backend shape into the form state the existing JSX expects, sync
+// family/contact/provider add+remove through their POST/DELETE endpoints
+// immediately (no batch save for those), and on Save PATCH preferences
+// (mapped to UserPreferencesUpdate shape) + PATCH profile if email
+// changed, then refetch. Keep all the existing rendering as-is."
 // [GenAI Use] LLM Response Start
-// Reads from localStorage via getUser(), redirects to /signup if not 
-// logged in, shows dismissable banner on first post-onboarding visit,
-// Save logs and persists to localStorage
-// [GenAI Use] LLM Response End
-// [GenAI Use] Reflection: The redirect to /signup when isLoggedIn() 
-// returns false is a basic auth guard - prevents unauthenticated access.
-// Will need to be replaced with a real auth check when backend sessions 
-// are implemented. Save currently only persists to localStorage, not 
-// the backend - noted as a gap to address when PATCH /api/users/{id}/
-// preferences is fully connected.
 
 const DAYS = [
   { key: 'mon', label: 'M' },
@@ -26,22 +41,114 @@ const DAYS = [
   { key: 'sun', label: 'Su' },
 ];
 
+// Backend UserResponse -> form-shaped prefs the existing JSX reads.
+// Defaults are picked to match what onboarding step 2 uses so a fresh
+// account (where most fields are null) renders sane buttons.
+function prefsFromBackend(u) {
+  const blocked = Array.isArray(u.blocked_windows) ? u.blocked_windows[0] : null;
+  const keepFree = Array.isArray(u.keep_free_windows) ? u.keep_free_windows[0] : null;
+
+  return {
+    communicationStyle: u.comm_style || 'brief',
+    // backend uses 'sms' (matches the message channel enum); UI calls it 'text'.
+    preferredContact: u.preferred_channel === 'call' ? 'call' : 'text',
+    callUrgencyThreshold: u.call_urgency_threshold || 'high',
+
+    quietHoursStart: blocked?.start_time || '22:00',
+    quietHoursEnd: blocked?.end_time || '07:00',
+    keepFreeStart: keepFree?.start_time || '',
+    keepFreeEnd: keepFree?.end_time || '',
+    activeDays: Array.isArray(u.active_days) ? u.active_days : ['mon', 'tue', 'wed', 'thu', 'fri'],
+
+    morningDigest: !!u.morning_digest_enabled,
+    digestTime: u.morning_digest_time || '07:00',
+    digestContent: u.morning_digest_content || 'calendar',
+    digestTravelTime: !!u.morning_digest_travel_time,
+
+    escalationTimeoutMinutes: u.escalation_timeout_minutes ?? 30,
+    autoApproveLowRisk: !!u.auto_approve_low_risk,
+    maxReminders: u.max_reminders ?? 3,
+
+    tone: u.tone || 'casual',
+    reminderLeadTime: String(u.reminder_lead_time_minutes ?? 30),
+    conflictHandling: u.conflict_handling || 'suggest',
+  };
+}
+
+// Reverse mapping for Save. Only includes fields the user could have
+// changed via the UI -- everything else stays at its backend value.
+function prefsToBackend(p) {
+  return {
+    comm_style: p.communicationStyle,
+    preferred_channel: p.preferredContact === 'text' ? 'sms' : 'call',
+    call_urgency_threshold: p.callUrgencyThreshold,
+    blocked_windows:
+      p.quietHoursStart && p.quietHoursEnd
+        ? [{ start_time: p.quietHoursStart, end_time: p.quietHoursEnd }]
+        : null,
+    keep_free_windows:
+      p.keepFreeStart && p.keepFreeEnd
+        ? [{ start_time: p.keepFreeStart, end_time: p.keepFreeEnd }]
+        : null,
+    active_days: p.activeDays,
+    morning_digest_enabled: p.morningDigest,
+    morning_digest_time: p.digestTime,
+    morning_digest_content: p.digestContent,
+    morning_digest_travel_time: p.digestTravelTime,
+    escalation_timeout_minutes: p.escalationTimeoutMinutes,
+    auto_approve_low_risk: p.autoApproveLowRisk,
+    max_reminders: p.maxReminders,
+    tone: p.tone,
+    reminder_lead_time_minutes: parseInt(p.reminderLeadTime, 10) || 30,
+    conflict_handling: p.conflictHandling,
+  };
+}
+
 export default function Profile() {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
   const [prefs, setPrefs] = useState(null);
+  const [familyMembers, setFamilyMembers] = useState([]);
+  const [contacts, setContacts] = useState([]);
+  const [providers, setProviders] = useState([]);
+  const [loadError, setLoadError] = useState('');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+
   const [newMember, setNewMember] = useState({ name: '', relation: '', phone_number: '' });
   const [newContact, setNewContact] = useState({ name: '', role: '', org: '', phone: '' });
   const [newProvider, setNewProvider] = useState({ name: '', specialty: '', practice: '' });
 
+  const userId = getCachedUser()?.id;
+
   useEffect(() => {
-    if (!isLoggedIn()) { navigate('/signup', { replace: true }); return; }
-    const u = loadUser();
-    setUser(u);
-    setPrefs({ ...u.preferences });
-  }, [navigate]);
+    if (!isLoggedIn() || !userId) {
+      navigate('/signin?next=/profile', { replace: true });
+      return;
+    }
+    let cancelled = false;
+    Promise.all([
+      fetchUser(userId),
+      listFamilyMembers(userId),
+      listContacts(userId),
+      listProviders(userId),
+    ])
+      .then(([u, fam, cts, prov]) => {
+        if (cancelled) return;
+        setUser(u);
+        setPrefs(prefsFromBackend(u));
+        setFamilyMembers(fam || []);
+        setContacts(cts || []);
+        setProviders(prov || []);
+        // refresh cached user so other pages see the latest snapshot
+        cacheUser(u);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setLoadError(err.message || 'Could not load your profile.');
+      });
+    return () => { cancelled = true; };
+  }, [navigate, userId]);
 
   function setPref(key, val) {
     setPrefs((p) => ({ ...p, [key]: val }));
@@ -56,58 +163,119 @@ export default function Profile() {
     });
   }
 
-  function addMember() {
+  // family/contacts/providers sync through the backend immediately --
+  // these are individual rows in their own tables, batching them onto
+  // Save would mean tracking adds/removes in a queue and replaying on
+  // Save click. Not worth the complexity at current scale.
+  async function addMember() {
     if (!newMember.name.trim()) return;
-    setUser((u) => ({ ...u, familyMembers: [...u.familyMembers, { id: Date.now(), ...newMember }] }));
-    setNewMember({ name: '', relation: '', phone_number: '' });
+    try {
+      const created = await createFamilyMember(userId, {
+        name: newMember.name.trim(),
+        relation: newMember.relation.trim() || null,
+        phone_number: newMember.phone_number.trim() || null,
+      });
+      setFamilyMembers((ms) => [...ms, created]);
+      setNewMember({ name: '', relation: '', phone_number: '' });
+    } catch (err) {
+      alert(`Couldn't add family member: ${err.message}`);
+    }
   }
-  function removeMember(id) {
-    setUser((u) => ({ ...u, familyMembers: u.familyMembers.filter((m) => m.id !== id) }));
+  async function removeMember(id) {
+    try {
+      await deleteFamilyMember(userId, id);
+      setFamilyMembers((ms) => ms.filter((m) => m.id !== id));
+    } catch (err) {
+      alert(`Couldn't remove family member: ${err.message}`);
+    }
   }
 
-  function addContact() {
+  async function addContact() {
     if (!newContact.name.trim()) return;
-    setUser((u) => ({ ...u, contacts: [...(u.contacts || []), { id: Date.now(), ...newContact }] }));
-    setNewContact({ name: '', role: '', org: '', phone: '' });
+    try {
+      const created = await createContact(userId, {
+        name: newContact.name.trim(),
+        role: newContact.role.trim() || null,
+        org: newContact.org.trim() || null,
+        phone: newContact.phone.trim() || null,
+      });
+      setContacts((cs) => [...cs, created]);
+      setNewContact({ name: '', role: '', org: '', phone: '' });
+    } catch (err) {
+      alert(`Couldn't add contact: ${err.message}`);
+    }
   }
-  function removeContact(id) {
-    setUser((u) => ({ ...u, contacts: u.contacts.filter((c) => c.id !== id) }));
+  async function removeContact(id) {
+    try {
+      await deleteContact(userId, id);
+      setContacts((cs) => cs.filter((c) => c.id !== id));
+    } catch (err) {
+      alert(`Couldn't remove contact: ${err.message}`);
+    }
   }
 
-  function addProvider() {
+  async function addProvider() {
     if (!newProvider.name.trim()) return;
-    setUser((u) => ({ ...u, providers: [...(u.providers || []), { id: Date.now(), ...newProvider }] }));
-    setNewProvider({ name: '', specialty: '', practice: '' });
+    try {
+      const created = await createProvider(userId, {
+        name: newProvider.name.trim(),
+        specialty: newProvider.specialty.trim() || null,
+        practice: newProvider.practice.trim() || null,
+      });
+      setProviders((ps) => [...ps, created]);
+      setNewProvider({ name: '', specialty: '', practice: '' });
+    } catch (err) {
+      alert(`Couldn't add provider: ${err.message}`);
+    }
   }
-  function removeProvider(id) {
-    setUser((u) => ({ ...u, providers: u.providers.filter((p) => p.id !== id) }));
+  async function removeProvider(id) {
+    try {
+      await deleteProvider(userId, id);
+      setProviders((ps) => ps.filter((p) => p.id !== id));
+    } catch (err) {
+      alert(`Couldn't remove provider: ${err.message}`);
+    }
   }
 
-  function dismissBanner() {
-    const updated = { ...user, bannerDismissed: true };
-    setUser(updated);
-    persistUser(updated);
-  }
+  const dismissBanner = useCallback(() => {
+    // banner-dismissed is a UI-only flag, not a backend field. keep it
+    // in the cached user so it survives a refresh without round-tripping.
+    setUser((u) => {
+      const updated = { ...u, banner_dismissed: true };
+      cacheUser(updated);
+      return updated;
+    });
+  }, []);
 
   async function handleSave() {
+    if (!user || !prefs || saving) return;
     setSaving(true);
-    const updated = { ...user, preferences: prefs };
-    console.log('Save payload:', updated);
-    persistUser(updated);
-    setSaving(false);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
+    try {
+      await updatePreferences(userId, prefsToBackend(prefs));
+      // refetch so the cached user matches what the backend persisted
+      const fresh = await fetchUser(userId);
+      setUser(fresh);
+      setPrefs(prefsFromBackend(fresh));
+      cacheUser(fresh);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch (err) {
+      alert(`Couldn't save preferences: ${err.message}`);
+    } finally {
+      setSaving(false);
+    }
   }
 
+  if (loadError) return <div className="page-loading">Error: {loadError}</div>;
   if (!user || !prefs) return <div className="page-loading">Loading…</div>;
 
   return (
     <div className="page">
       <h1 className="page-title">Profile & Preferences</h1>
 
-      {user.bannerDismissed === false && (
+      {user.banner_dismissed !== true && (
         <Banner
-          message="G is active — save this number: (555) 010-GAAI"
+          message="G is active — text or call +1 (510) 945-3573 to get started."
           onDismiss={dismissBanner}
         />
       )}
@@ -117,27 +285,28 @@ export default function Profile() {
         <h2 className="card-title">Your Info</h2>
         <div className="info-row">
           <span className="info-label">Name</span>
-          <span>{user.name}</span>
+          <span>{user.name || '—'}</span>
         </div>
         <div className="info-row">
           <span className="info-label">Phone</span>
-          <span>{user.phone}</span>
+          <span>{user.phone_number || '—'}</span>
         </div>
         <div className="info-row">
           <span className="info-label">Email</span>
-          <span>{user.email}</span>
+          <span>{user.email || '—'}</span>
         </div>
       </section>
 
       {/* ─── Family Members ────────────────────────────── */}
       <section className="card">
         <h2 className="card-title">Family Members</h2>
-        {user.familyMembers.length > 0 && (
+        {familyMembers.length > 0 && (
           <ul className="member-list">
-            {user.familyMembers.map((m) => (
+            {familyMembers.map((m) => (
               <li key={m.id} className="member-item">
                 <span>
-                  {m.name} <span className="member-relation">({m.relation})</span>
+                  {m.name}{' '}
+                  {m.relation && <span className="member-relation">({m.relation})</span>}
                   {m.phone_number && <span className="contact-phone"> · {m.phone_number}</span>}
                 </span>
                 <button className="btn-remove" onClick={() => removeMember(m.id)}>✕</button>
@@ -176,9 +345,9 @@ export default function Profile() {
       <section className="card">
         <h2 className="card-title">Contacts</h2>
         <p className="card-description">People G may need to call — schools, doctors' offices, service providers.</p>
-        {(user.contacts || []).length > 0 && (
+        {contacts.length > 0 && (
           <ul className="member-list">
-            {user.contacts.map((c) => (
+            {contacts.map((c) => (
               <li key={c.id} className="member-item">
                 <div>
                   <span className="contact-name">{c.name}</span>
@@ -231,9 +400,9 @@ export default function Profile() {
       <section className="card">
         <h2 className="card-title">Preferred Providers</h2>
         <p className="card-description">G uses these when booking appointments or making referrals.</p>
-        {(user.providers || []).length > 0 && (
+        {providers.length > 0 && (
           <ul className="member-list">
-            {user.providers.map((p) => (
+            {providers.map((p) => (
               <li key={p.id} className="member-item">
                 <div>
                   <span className="contact-name">{p.name}</span>
@@ -568,3 +737,14 @@ export default function Profile() {
     </div>
   );
 }
+// [GenAI Use] LLM Response End
+// [GenAI Use] Reflection: chose immediate-sync for family/contact/provider
+// add+remove instead of a queue-then-batch-on-save model. Backend rows
+// each have their own id and the user expects the list to reflect what
+// they just did -- queuing means the UI lies until they hit Save. The
+// downside is each add/remove costs one round-trip; at the row counts
+// we care about (single digits) that's fine. Save is reserved for the
+// preference dial that has no per-row identity. updateProfile (PATCH
+// for name/email) is intentionally not wired here since the page doesn't
+// expose name/email as editable fields; if that ships later, fold it
+// into handleSave next to updatePreferences.

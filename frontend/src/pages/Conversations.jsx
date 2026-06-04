@@ -1,159 +1,148 @@
 import { useState, useEffect } from 'react';
-import { getTaskHistory } from '../api';
+import { useNavigate } from 'react-router-dom';
+import { getMessages } from '../api';
+import { getUser } from '../auth';
 import MessageBubble from '../components/MessageBubble';
-import VoiceTranscript from '../components/VoiceTranscript';
-import { useTasks } from '../context/TaskContext';
 
+// [GenAI Use] Prompt: "Conversations.jsx used to render a flat
+// chronological message list grouped by day, which made it hard to
+// browse later. Group consecutive messages into sessions (a single
+// call, a single SMS thread, a single chat session) using two heuristics:
+// (1) channel boundary -- voice <-> sms ends a session; (2) gap > 30
+// minutes ends a session. Render each session as its own card with a
+// channel badge (Call vs SMS, since browser chat is logged with
+// channel='sms' too), a relative header (Today / Yesterday / dated),
+// and the messages inside chronologically. Sort sessions newest-first
+// by their first message."
 // [GenAI Use] LLM Response Start
-// Fetches conversations on mount, renders MessageBubble list
-// [GenAI Use] LLM Response End
-// [GenAI Use] Reflection: useEffect empty dep array confirmed correct
-// for one-time fetch on mount:
-// https://react.dev/reference/react/useEffect#fetching-data-with-effects
-// Identified missing loading/error state, needs improvement.
 
-// [GenAI Use] LLM Response Start UPDATE
-// Added a "From Chat" section at the top for context tasks that
-// reached Completed or Failed status.
-// [GenAI Use] LLM Response End
-// [GenAI Use] Reflection: Filters TaskContext for tasks with
-// Completed or Failed status and shows them at the top as a
-// separate section. Good way to see the history of what the AI
-// actually did.
+// 30 minutes of inactivity = next message starts a new session. Tuned
+// for human chat cadence -- short enough that the morning thread doesn't
+// merge with the evening thread, long enough that thinking-of-a-reply
+// pauses don't artificially split a single back-and-forth.
+const SESSION_GAP_MS = 30 * 60 * 1000;
 
+function formatSessionHeader(iso) {
+  const d = new Date(iso);
+  const now = new Date();
+  const today = now.toDateString();
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
 
-const STATUS_COLORS = {
-  COMPLETED: '#10b981',
-  FAILED: '#6b7280',
-};
-
-const STATUS_LABELS = {
-  COMPLETED: 'Completed',
-  FAILED: 'Failed',
-};
-
-function formatDuration(createdAt, completedAt) {
-  const ms = new Date(completedAt) - new Date(createdAt);
-  const mins = Math.floor(ms / 60000);
-  if (mins < 60) return `${mins}m`;
-  const hrs = Math.floor(mins / 60);
-  const rem = mins % 60;
-  return rem > 0 ? `${hrs}h ${rem}m` : `${hrs}h`;
+  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (d.toDateString() === today) return `Today · ${time}`;
+  if (d.toDateString() === yesterday.toDateString()) return `Yesterday · ${time}`;
+  return d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) + ` · ${time}`;
 }
 
-function formatDate(ts) {
-  return new Date(ts).toLocaleString([], {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+function channelLabel(channel) {
+  if (channel === 'voice') return { icon: '📞', label: 'Call' };
+  // SMS bucket includes the browser Chat tab (logged with channel='sms').
+  return { icon: '💬', label: 'SMS' };
 }
 
-function TaskHistoryItem({ task }) {
-  const [open, setOpen] = useState(false);
-  const { description, type, status, createdAt, completedAt, channel, conversation, transcript, callDuration } = task;
-
-  return (
-    <div className={`history-item${open ? ' history-item--open' : ''}`}>
-      <button className="history-item-header" onClick={() => setOpen((o) => !o)}>
-        <div className="history-item-meta">
-          <p className="history-item-description">{description}</p>
-          <div className="history-item-details">
-            <span className="badge badge-type">{type}</span>
-            <span
-              className="badge badge-status"
-              style={{ background: STATUS_COLORS[status] }}
-            >
-              {STATUS_LABELS[status]}
-            </span>
-            <span className="badge badge-channel">
-              {channel === 'voice' ? '⊙ Voice' : '◎ SMS'}
-            </span>
-          </div>
-          <p className="history-item-timestamps">
-            {formatDate(createdAt)} · Completed in {formatDuration(createdAt, completedAt)}
-          </p>
-        </div>
-        <span className={`history-chevron${open ? ' history-chevron--open' : ''}`}>›</span>
-      </button>
-
-      {open && (
-        <div className="history-item-body">
-          {channel === 'sms' && conversation && (
-            <div className="chat-log chat-log--compact">
-              {conversation.map((m) => (
-                <MessageBubble key={m.id} message={m} />
-              ))}
-            </div>
-          )}
-          {channel === 'voice' && transcript && (
-            <VoiceTranscript transcript={transcript} duration={callDuration} />
-          )}
-        </div>
-      )}
-    </div>
-  );
+// Walk chronological messages, break into sessions on channel change or
+// long gap. Returns sessions in chronological order; caller reverses for
+// newest-first display.
+function groupIntoSessions(messages) {
+  const sessions = [];
+  let current = null;
+  for (const m of messages) {
+    const ts = new Date(m.timestamp).getTime();
+    const sameChannel = current && current.channel === m.channel;
+    const withinGap = current && ts - current.lastTs <= SESSION_GAP_MS;
+    if (current && sameChannel && withinGap) {
+      current.messages.push(m);
+      current.lastTs = ts;
+    } else {
+      current = {
+        id: m.id, // first message id stands in as a stable session key
+        channel: m.channel,
+        startedAt: m.timestamp,
+        lastTs: ts,
+        messages: [m],
+      };
+      sessions.push(current);
+    }
+  }
+  return sessions;
 }
 
-const CHAT_STATUS_COLORS = { COMPLETED: '#10b981', FAILED: '#6b7280' };
-const CHAT_STATUS_LABELS = { COMPLETED: 'Completed', FAILED: 'Failed' };
-
-function ChatTaskHistoryItem({ task }) {
-  const { description, type, status, createdAt, summary } = task;
-  return (
-    <div className="history-item">
-      <div className="history-item-header" style={{ cursor: 'default' }}>
-        <div className="history-item-meta">
-          <p className="history-item-description">{description}</p>
-          <div className="history-item-details">
-            <span className="badge badge-type">{type}</span>
-            <span className="badge badge-status" style={{ background: CHAT_STATUS_COLORS[status] }}>
-              {CHAT_STATUS_LABELS[status]}
-            </span>
-            <span className="badge badge-channel">💬 Chat</span>
-          </div>
-          <p className="history-item-timestamps">
-            {new Date(createdAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-            {summary && ` · ${summary}`}
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export default function TaskHistory() {
-  const [history, setHistory] = useState([]);
-  const { tasks } = useTasks();
+export default function Conversations() {
+  const navigate = useNavigate();
+  const [messages, setMessages] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    getTaskHistory().then(setHistory);
-  }, []);
+    const user = getUser();
+    if (!user?.id) {
+      navigate('/signin?next=/conversations', { replace: true });
+      return;
+    }
+    let cancelled = false;
+    getMessages(user.id, 200)
+      .then((rows) => {
+        if (cancelled) return;
+        // backend returns DESC for fast pagination; we want chronological
+        // for the grouping algorithm. We'll reverse session order at the
+        // render step.
+        setMessages([...rows].reverse());
+        setLoading(false);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(err.message || 'Failed to load history');
+        setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [navigate]);
 
-  const chatCompleted = tasks.filter(
-    (t) => (t.status === 'COMPLETED' || t.status === 'FAILED') && t.id.startsWith('chat-task-')
-  );
+  // newest session first; messages within each session stay chronological
+  const sessions = groupIntoSessions(messages).reverse();
 
   return (
     <div className="page">
-      <h1 className="page-title">Task History</h1>
-      {chatCompleted.length > 0 && (
-        <>
-          <h2 className="section-title">From Chat</h2>
-          <div className="history-list" style={{ marginBottom: 24 }}>
-            {chatCompleted.map((t) => (
-              <ChatTaskHistoryItem key={t.id} task={t} />
-            ))}
-          </div>
-          <h2 className="section-title">All History</h2>
-        </>
+      <h1 className="page-title">Conversation History</h1>
+      {loading && <p className="task-empty">Loading…</p>}
+      {!loading && error && <p className="error-msg">{error}</p>}
+      {!loading && !error && messages.length === 0 && (
+        <p className="task-empty">No messages yet. Start a chat or text G.</p>
       )}
       <div className="history-list">
-        {history.map((t) => (
-          <TaskHistoryItem key={t.id} task={t} />
-        ))}
+        {sessions.map((s) => {
+          const { icon, label } = channelLabel(s.channel);
+          return (
+            <section key={s.id} className="history-item history-item--open">
+              <div className="history-item-header" style={{ cursor: 'default' }}>
+                <div className="history-item-meta">
+                  <div className="history-item-details">
+                    <span className="badge badge-channel">{icon} {label}</span>
+                    <span className="badge badge-status">{s.messages.length} message{s.messages.length === 1 ? '' : 's'}</span>
+                  </div>
+                  <p className="history-item-timestamps">{formatSessionHeader(s.startedAt)}</p>
+                </div>
+              </div>
+              <div className="history-item-body">
+                <div className="chat-log chat-log--compact">
+                  {s.messages.map((m) => (
+                    <MessageBubble key={m.id} message={m} />
+                  ))}
+                </div>
+              </div>
+            </section>
+          );
+        })}
       </div>
     </div>
   );
 }
+// [GenAI Use] LLM Response End
+// [GenAI Use] Reflection: kept the grouping heuristic in a pure helper
+// so it's testable in isolation later. The two-rule cutoff (channel
+// boundary + 30-minute gap) handles the demo cases: a single back-and-
+// forth call shows as one card, a chat session shows as one card, and
+// if the user texts G in the morning and again in the evening they get
+// two SMS cards instead of one mega-thread. If/when we add an explicit
+// session_id column to messages this collapses into one-line grouping
+// by that id -- but inference works fine until then.

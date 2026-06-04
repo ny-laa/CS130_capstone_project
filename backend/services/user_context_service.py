@@ -29,7 +29,10 @@ def _format_user(user: User) -> dict[str, Any]:
     has_google = bool(user.google_oauth and user.google_oauth.get("access_token"))
     return {
         "user_id": str(user.id),
-        "name": user.name,
+        # ORM Python attribute is `full_name` (mapped to the `name` column).
+        # `user.name` would AttributeError. Serialize as "name" for the LLM
+        # prompt since that's the natural key.
+        "name": user.full_name,
         "email": user.email,
 
         #communication
