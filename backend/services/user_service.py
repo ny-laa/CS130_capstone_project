@@ -110,10 +110,13 @@ def update_user_profile(
     user_id: UUID,
     name: str | None = None,
     email: str | None = None,
+    phone_number: str | None = None,
 ) -> User:
-    #patch for the "Your Info" section of the profile page.
-    #phone_number isn't editable here -- changing it requires re-verification
-    #against twilio, handled in a separate flow.
+    #patch for the "Your Info" section of the profile page + onboarding step 1.
+    #phone_number is settable only when the user currently has none (first-time
+    #set during onboarding). swapping an established phone goes through a
+    #separate re-verification flow that doesn't exist yet -- block here instead
+    #of letting someone silently re-bind their account to a different number.
 
     user = get_user_by_id(db, user_id)
     if user is None:
@@ -126,7 +129,19 @@ def update_user_profile(
         user.email = email
 
     if name is not None:
+        # ORM attribute is `full_name`; column is `name`. Writing to
+        # `user.name` would AttributeError.
         user.full_name = name
+
+    if phone_number is not None and phone_number != user.phone_number:
+        if user.phone_number is not None:
+            raise ValueError(
+                "Phone number can't be changed once set. Contact support to re-verify."
+            )
+        clash = get_user_by_phone(db, phone_number)
+        if clash and clash.id != user_id:
+            raise ValueError("A user with this phone number already exists!!")
+        user.phone_number = phone_number
 
     try:
         db.commit()

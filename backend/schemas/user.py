@@ -75,18 +75,26 @@ class UserPreferencesUpdate(BaseModel):
 
 
 class UserProfileUpdate(BaseModel):
-    #patch for the "Your Info" section of the profile page.
-    #phone_number intentionally excluded -- changing it requires re-verification.
+    #patch for the "Your Info" section of the profile page + onboarding step 1.
+    #phone_number is settable only when the user's current phone is None
+    #(first-time set during onboarding). once set, changing it goes through
+    #a separate re-verification flow (not built yet) so people can't quietly
+    #swap which phone number their account is tied to.
     name: str | None = Field(default=None, max_length=120)
     email: str | None = Field(default=None, max_length=255)
+    phone_number: str | None = Field(default=None, max_length=20)
 
 
-# dropped the extra name field (useless with fullname)
 class UserResponse(BaseModel):
     id: UUID
+    # The ORM Python attribute is `full_name` (it maps to the `name`
+    # column in the DB), so `from_attributes=True` wouldn't auto-populate
+    # a field called `name`. The model_validator below remaps it before
+    # validation runs; this declaration just reserves the field as the
+    # JSON output key the frontend expects.
+    name: str | None = None
     phone_number: str | None
     email: str | None
-    name: str | None = None  # maps from User.full_name (Python attr for the "name" DB column)
 
     # ── communication ──────────────────────────────────────────
     comm_style: CommStyle

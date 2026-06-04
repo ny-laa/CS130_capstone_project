@@ -18,7 +18,8 @@ def _make_user():
     # building doesn't blow up on a missing attribute.
     return SimpleNamespace(
         id=uuid4(),
-        name="Radhika Kakkar",
+        # ORM attribute is full_name (mapped to "name" column).
+        full_name="Radhika Kakkar",
         email="rads@example.com",
 
         # ── communication ──────────────────────────────────────

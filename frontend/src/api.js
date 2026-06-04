@@ -37,6 +37,89 @@ export async function login(email, password) {
   });
 }
 
+// re-fetch the backend's view of a user. used after onboarding writes to
+// pull the canonical state into localStorage instead of mutating
+// fields ad-hoc and risking drift.
+export async function fetchUser(userId) {
+  return apiFetch(`/api/users/${userId}`);
+}
+
+// PATCH name/email/phone_number. phone_number is settable only when the
+// user's current phone is null (first-time onboarding); the backend rejects
+// a swap on an already-set phone.
+export async function updateProfile(userId, patch) {
+  return apiFetch(`/api/users/${userId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  });
+}
+
+// PATCH preferences. `patch` must use the backend's snake_case keys --
+// see UserPreferencesUpdate in backend/schemas/user.py. Step2Preferences
+// maps the form state into this shape before calling.
+export async function updatePreferences(userId, patch) {
+  return apiFetch(`/api/users/${userId}/preferences`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  });
+}
+
+// POST one family member. Step1Family loops over the user's added rows
+// and calls this per row -- the backend doesn't currently expose a bulk
+// endpoint and the row count in practice is single digits.
+export async function createFamilyMember(userId, member) {
+  return apiFetch(`/api/users/${userId}/family-members`, {
+    method: 'POST',
+    body: JSON.stringify(member),
+  });
+}
+
+export async function listFamilyMembers(userId) {
+  return apiFetch(`/api/users/${userId}/family-members`);
+}
+
+export async function deleteFamilyMember(userId, memberId) {
+  return apiFetch(`/api/users/${userId}/family-members/${memberId}`, {
+    method: 'DELETE',
+  });
+}
+
+// contacts: third parties G might call/text on the user's behalf.
+export async function listContacts(userId) {
+  return apiFetch(`/api/users/${userId}/contacts`);
+}
+
+export async function createContact(userId, contact) {
+  return apiFetch(`/api/users/${userId}/contacts`, {
+    method: 'POST',
+    body: JSON.stringify(contact),
+  });
+}
+
+export async function deleteContact(userId, contactId) {
+  return apiFetch(`/api/users/${userId}/contacts/${contactId}`, {
+    method: 'DELETE',
+  });
+}
+
+// providers: doctors / lawyers / preferred service providers.
+export async function listProviders(userId) {
+  return apiFetch(`/api/users/${userId}/providers`);
+}
+
+export async function createProvider(userId, provider) {
+  return apiFetch(`/api/users/${userId}/providers`, {
+    method: 'POST',
+    body: JSON.stringify(provider),
+  });
+}
+
+export async function deleteProvider(userId, providerId) {
+  return apiFetch(`/api/users/${userId}/providers/${providerId}`, {
+    method: 'DELETE',
+  });
+}
+
 // All API calls go here. Mocked for now — replace individual functions with real fetch calls when backend is ready.
 // [GenAI Use] LLM Response Start
 // Added sendMessage() which calls Anthropic API or falls back to

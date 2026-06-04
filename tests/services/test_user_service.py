@@ -160,6 +160,8 @@ def test_update_user_profile_sets_full_name_and_email(mock_get_by_id):
         )
 
     assert result is fake_user
+    # ORM attr is full_name (mapped to "name" column). update_user_profile
+    # writes to full_name; the API serializes it back as "name".
     assert fake_user.full_name == "Alex P. Johnson"
     assert fake_user.email == "new@example.com"
     db.commit.assert_called_once()

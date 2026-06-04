@@ -54,11 +54,16 @@ def get_user(user_id: UUID, db: Session = Depends(get_db)):
 def patch_user(
     user_id: UUID, payload: UserProfileUpdate, db: Session = Depends(get_db)
 ):
-    #profile page "Your Info" save -- updates name / email.
-    #phone_number is intentionally not editable here.
+    #profile page "Your Info" save + onboarding step 1. updates name / email,
+    #and accepts phone_number for first-time set during onboarding (changing
+    #an established phone is blocked at the service layer).
     try:
         return update_user_profile(
-            db, user_id=user_id, name=payload.name, email=payload.email
+            db,
+            user_id=user_id,
+            name=payload.name,
+            email=payload.email,
+            phone_number=payload.phone_number,
         )
     except ValueError as exc:
         msg = str(exc)
