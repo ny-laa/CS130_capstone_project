@@ -36,6 +36,11 @@ function titleCase(s) {
 // downtime.
 const PAST_DUE_GRACE_MS = 5 * 60 * 1000;
 
+// Issues older than this stop appearing on the dashboard. Row stays in
+// the DB (History still references it via task_id), it's just hidden so
+// the Issues group doesn't pile up dead weight indefinitely.
+const ISSUE_VISIBLE_MS = 24 * 60 * 60 * 1000;
+
 function toCardTask(t) {
   const firstStep = Array.isArray(t.plan_steps) ? t.plan_steps[0] : null;
   const stepParams = firstStep?.params || {};
@@ -59,12 +64,21 @@ function toCardTask(t) {
   else if (t.status === 'COMPLETED' && stepMessage) summary = `Sent: "${stepMessage}"`;
   else if (t.status === 'FAILED') summary = 'Delivery failed. Check logs.';
 
+  // Pick the "last activity" timestamp for age-out filtering. For genuine
+  // FAILED tasks updated_at is the failure time. For past-due PENDING that
+  // we're rendering as FAILED, scheduled_at is what matters (updated_at
+  // equals created_at, i.e. when the user scheduled it).
+  const lastActivityIso = pastDue && stepParams.scheduled_at
+    ? stepParams.scheduled_at
+    : (t.updated_at || t.created_at);
+
   return {
     id: t.id,
     description: t.description,
     type: titleCase(t.type),
     status: displayStatus,
     createdAt: t.created_at,
+    lastActivityIso,
     summary,
   };
 }
@@ -88,7 +102,17 @@ export default function Tasks() {
         if (cancelled) return;
         const cards = rows.map(toCardTask);
         setActive(cards.filter((t) => ACTIVE_STATUSES.has(t.status)));
-        setIssues(cards.filter((t) => ISSUE_STATUSES.has(t.status)));
+        // Issues age out after 24h so the dashboard doesn't accumulate
+        // dead weight. The Task row is still in the DB; this is just
+        // a display filter.
+        const cutoff = Date.now() - ISSUE_VISIBLE_MS;
+        setIssues(
+          cards.filter((t) => {
+            if (!ISSUE_STATUSES.has(t.status)) return false;
+            const ageMs = Date.parse(t.lastActivityIso);
+            return Number.isNaN(ageMs) ? true : ageMs >= cutoff;
+          })
+        );
         setLoading(false);
       })
       .catch((err) => {
