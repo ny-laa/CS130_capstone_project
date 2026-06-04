@@ -101,7 +101,11 @@ class User(Base):
 
     # ── google integration ────────────────────────────────────
     #access_token / refresh_token / expiry bundle. populated by the oauth
-    #callback in api/auth/oauth.py. TODO encrypt at rest before prod.
+    #callback in api/auth/oauth.py. tokens are encrypted at rest via
+    #utils.token_crypto (fernet/MultiFernet); expiry stays plaintext so
+    #services.user_service.get_access_token can compare without decrypt.
+    #all reads/writes go through services.user_service -- never touch
+    #user.google_oauth directly or you'll bypass crypto.
     google_oauth: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
