@@ -20,6 +20,7 @@ from config import settings
 from database import get_db
 
 from api.auth.oauth import router as oauth_router
+from api.chat import router as chat_router
 
 app = FastAPI(
     title="G",
@@ -43,6 +44,7 @@ app.include_router(sms.router)
 app.include_router(call.router)
 app.include_router(tasks_api.router)
 app.include_router(oauth_router)
+app.include_router(chat_router)
 
 # Debug endpoints for manually firing outbound tools. Only mounted when
 # DEBUG=true so they can't be hit in prod by accident.

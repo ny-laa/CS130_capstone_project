@@ -1,6 +1,6 @@
 import { getToken } from './auth';
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = '';
 
 function authHeaders(extra = {}) {
   const token = getToken();
@@ -56,37 +56,24 @@ const MOCK_RESPONSES = [
   { keywords: ['call', 'escalat', 'contact', 'reach'], reply: "I'll handle that for you and report back.", task: { type: 'Escalation', status: 'In Progress', description: null, summary: '' } },
 ];
 
-export async function sendMessage(messages) {
-  const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
-
-  if (apiKey) {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+export async function sendMessage(messages, userId = null) {
+  const lastUser = messages[messages.length - 1]?.content ?? '';
+  try {
+    const data = await apiFetch('/api/chat', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true',
-      },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 512,
-        system: "You are G, a helpful AI secretary. When you create a task for the user, include a <task> block at the end of your response with these fields: <task><type>Reminder|Calendar|Escalation</type><status>Pending|In Progress|Needs Approval</status><description>short description</description><summary>one-line summary</summary></task>",
-        messages,
-      }),
+      body: JSON.stringify({ message: lastUser, user_id: userId }),
     });
-    const data = await res.json();
-    return data.content?.[0]?.text ?? "Sorry, I couldn't get a response.";
+    return data.reply;
+  } catch (err) {
+    // Mock fallback if backend is unreachable
+    const lower = lastUser.toLowerCase();
+    const match = MOCK_RESPONSES.find((m) => m.keywords.some((k) => lower.includes(k)));
+    if (match) {
+      const desc = lastUser.slice(0, 60);
+      return `${match.reply}\n<task><type>${match.task.type}</type><status>${match.task.status}</status><description>${desc}</description><summary>${match.task.summary}</summary></task>`;
+    }
+    return "I'm here to help! You can ask me to set reminders, schedule events, or handle tasks on your behalf.";
   }
-
-  // Mock fallback
-  const lastUser = messages[messages.length - 1]?.content?.toLowerCase() ?? '';
-  const match = MOCK_RESPONSES.find((m) => m.keywords.some((k) => lastUser.includes(k)));
-  if (match) {
-    const desc = lastUser.slice(0, 60);
-    return `${match.reply}\n<task><type>${match.task.type}</type><status>${match.task.status}</status><description>${desc}</description><summary>${match.task.summary}</summary></task>`;
-  }
-  return "I'm here to help! You can ask me to set reminders, schedule events, or handle tasks on your behalf.";
 }
 
 export function parseTaskBlock(raw) {
