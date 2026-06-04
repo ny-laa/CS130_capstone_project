@@ -10,7 +10,6 @@ from xml.sax.saxutils import escape
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
-from adapters.communication.sms_tool import SMSTool
 from adapters.llm.claude_adapter import ClaudeAdapter
 from config import TWILIO_AUTH_TOKEN
 from database import get_db
@@ -26,7 +25,6 @@ router = APIRouter()
 
 # Module-level singletons
 _llm = ClaudeAdapter()
-_sms = SMSTool()
 
 
 ONBOARDING_VOICE_MESSAGE = (
@@ -239,22 +237,6 @@ async def call_transcript(
             dispatch.run_plan(plan, user, db)
         except Exception as exc:
             print(f"[dispatch error] {type(exc).__name__}: {exc}", flush=True)
-
-    # Fire a confirmation SMS so the caller has a written record of what G
-    # heard / agreed to do. Closes the "call → G texts you back" loop for #11.
-    # Wrapped so an outbound failure (A2P not yet approved, etc.) doesn't
-    # break the call.
-    try:
-        _sms.send(to=from_number, body=reply)
-    except Exception as exc:
-        print(f"[sms confirmation error] {type(exc).__name__}: {exc}", flush=True)
-
-    # Log outbound SMS confirmation regardless of send success -- a2p-rejected
-    # sends still show in the UI so we can demo end-to-end while pending.
-    try:
-        log_message(db, content=reply, direction="outbound", channel="sms", user_id=user.id)
-    except Exception as exc:
-        print(f"[sms confirmation log error] {type(exc).__name__}: {exc}", flush=True)
 
     # Speak the reply while immediately listening for the parent's next utterance.
     twiml = (
