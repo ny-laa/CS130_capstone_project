@@ -34,7 +34,7 @@ def register_user(payload: UserCreate, db: Session = Depends(get_db)):
             db,
             phone_number=payload.phone_number,
             email=payload.email,
-            full_name=payload.full_name,
+            name=payload.name,
         )
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
@@ -54,11 +54,11 @@ def get_user(user_id: UUID, db: Session = Depends(get_db)):
 def patch_user(
     user_id: UUID, payload: UserProfileUpdate, db: Session = Depends(get_db)
 ):
-    #profile page "Your Info" save -- updates full_name / email.
+    #profile page "Your Info" save -- updates name / email.
     #phone_number is intentionally not editable here.
     try:
         return update_user_profile(
-            db, user_id=user_id, full_name=payload.full_name, email=payload.email
+            db, user_id=user_id, name=payload.name, email=payload.email
         )
     except ValueError as exc:
         msg = str(exc)
@@ -70,13 +70,16 @@ def patch_user(
 def patch_preferences(
     user_id: UUID, payload: UserPreferencesUpdate, db: Session = Depends(get_db)
 ):
+    # Pass through every field the client sent; update_user_preferences
+    # filters by `is not None` so unsent fields stay untouched. exclude_unset
+    # would be stricter (only fields actually in the JSON body) but the
+    # Profile page sends the whole settings dict on Save, so the current
+    # behaviour matches what the UI does today.
     try:
         user = update_user_preferences(
             db,
             user_id=user_id,
-            comm_style=payload.comm_style,
-            preferred_channel=payload.preferred_channel,
-            blocked_windows=payload.blocked_windows,
+            **payload.model_dump(),
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))

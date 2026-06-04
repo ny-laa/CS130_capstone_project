@@ -4,8 +4,40 @@
 
 from uuid import UUID
 from sqlalchemy.orm import Session
-from models.datatypes import CommStyle, PreferredChannel
+from models.datatypes import (
+    CallUrgency,
+    CommStyle,
+    ConflictHandling,
+    DigestContent,
+    PreferredChannel,
+    Tone,
+)
 from models.user import User
+from datetime import datetime, timedelta
+import httpx
+from config import settings
+
+
+# fields update_user_preferences will overlay onto the user row. ordering
+# matches the Profile page so a diff against the UI is easy to eyeball.
+_PREFERENCE_FIELDS = (
+    "comm_style",
+    "preferred_channel",
+    "call_urgency_threshold",
+    "blocked_windows",
+    "keep_free_windows",
+    "active_days",
+    "morning_digest_enabled",
+    "morning_digest_time",
+    "morning_digest_content",
+    "morning_digest_travel_time",
+    "escalation_timeout_minutes",
+    "auto_approve_low_risk",
+    "max_reminders",
+    "tone",
+    "reminder_lead_time_minutes",
+    "conflict_handling",
+)
 
 
 def get_user_by_id(db: Session, user_id: UUID) -> User | None:
@@ -29,7 +61,7 @@ def create_user(
     db: Session,
     phone_number: str,
     email: str | None = None,
-    full_name: str | None = None,
+    name: str | None = None,
     comm_style: CommStyle = CommStyle.BRIEF, #set to brieff for now
     preferred_channel: PreferredChannel = PreferredChannel.SMS,
     blocked_windows: dict | list | None = None,
@@ -48,7 +80,7 @@ def create_user(
     user = User(
         phone_number=phone_number,
         email=email,
-        full_name=full_name,
+        name=name,
         comm_style=comm_style,
         preferred_channel=preferred_channel,
         blocked_windows=blocked_windows,
@@ -75,7 +107,7 @@ def create_user(
 def update_user_profile(
     db: Session,
     user_id: UUID,
-    full_name: str | None = None,
+    name: str | None = None,
     email: str | None = None,
 ) -> User:
     #patch for the "Your Info" section of the profile page.
@@ -92,8 +124,8 @@ def update_user_profile(
             raise ValueError("A user with this email already exists!!")
         user.email = email
 
-    if full_name is not None:
-        user.full_name = full_name
+    if name is not None:
+        user.name = name
 
     try:
         db.commit()
@@ -111,28 +143,52 @@ def update_user_profile(
 #rename them we have to update the router too.
 
 
-def update_user_preferences(
-    db: Session,
-    user_id: UUID,
-    comm_style: CommStyle | None = None,
-    preferred_channel: PreferredChannel | None = None,
-    blocked_windows: dict | list | None = None,
-) -> User:
-    #lets user update their prefs 
+def update_user_preferences(db: Session, user_id: UUID, **updates) -> User:
+    """Partial PATCH for everything under the Profile page's settings.
 
+    Accepts any subset of `_PREFERENCE_FIELDS`. Unknown keys are ignored
+    silently so a newer API contract from the frontend can't 500 the
+    backend mid-rollout. None values are treated as "leave this field
+    alone" -- pass explicit defaults at the API boundary if you actually
+    want to clear a field.
+    """
     user = get_user_by_id(db, user_id)
 
     if user is None:
         raise ValueError("User not found")
 
-    if comm_style is not None:
-        user.comm_style = comm_style
+    for field in _PREFERENCE_FIELDS:
+        value = updates.get(field)
+        if value is not None:
+            setattr(user, field, value)
 
-    if preferred_channel is not None:
-        user.preferred_channel = preferred_channel
+    try:
+        db.commit()
+        db.refresh(user)
+    except Exception:
+        db.rollback()
+        raise
 
-    if blocked_windows is not None:
-        user.blocked_windows = blocked_windows
+    return user
+
+# Used Claude to connect/update the following two functions to match the oauth changes made in oauth.py
+def save_google_oauth(
+    db: Session,
+    user_id: UUID,
+    access_token: str,
+    refresh_token: str | None,
+    expiry: str,
+) -> User:
+    user = get_user_by_id(db, user_id)
+    if user is None:
+        raise ValueError("User not found")
+
+    existing = user.google_oauth or {}
+    user.google_oauth = {
+        "access_token": access_token,
+        "refresh_token": refresh_token or existing.get("refresh_token"),
+        "expiry": expiry,
+    }
 
     try:
         db.commit()
@@ -144,55 +200,11 @@ def update_user_preferences(
     return user
 
 
-def save_google_tokens(
-    db: Session,
-    user_id: UUID,
-    calendar_token: str | None = None,
-    gmail_token: str | None = None,
-) -> User:
-    # Save Google access tokens after the OAuth flow finishes.
-
-    # Note: This func only STORESS tokens, auth layer is responsible for exchanging OAuth codes, refreshing expired tokens, encrypting tokens before production use
-   
+def get_google_oauth(db: Session, user_id: UUID) -> dict | None:
     user = get_user_by_id(db, user_id)
-
     if user is None:
         raise ValueError("User not found")
-
-    if calendar_token is not None:
-        user.calendar_token = calendar_token
-
-    if gmail_token is not None:
-        user.gmail_token = gmail_token
-
-    try:
-        db.commit()
-        db.refresh(user)
-    except Exception:
-        db.rollback()
-        raise
-
-    return user
-
-
-def get_calendar_token(db: Session, user_id: UUID) -> str | None:
-
-    user = get_user_by_id(db, user_id)
-
-    if user is None:
-        raise ValueError("User not found")
-
-    return user.calendar_token
-
-
-def get_gmail_token(db: Session, user_id: UUID) -> str | None:
-
-    user = get_user_by_id(db, user_id)
-
-    if user is None:
-        raise ValueError("User not found")
-
-    return user.gmail_token
+    return user.google_oauth
 
 
 def delete_user(db: Session, user_id: UUID) -> bool:
@@ -213,3 +225,59 @@ def delete_user(db: Session, user_id: UUID) -> bool:
         raise
 
     return True
+
+def refresh_token(db: Session, user_id: UUID) -> str:
+    user = get_user_by_id(db, user_id)
+    # error handling
+    if user is None:
+        raise ValueError("user not found")
+    
+    oauth = user.google_oauth
+    if not oauth or not oauth.get("refresh_token"):
+        raise ValueError("no refresh token found")
+    
+    response = httpx.post(
+        "https://oauth2.googleapis.com/token",
+        data={
+            "client_id": settings.GOOGLE_CLIENT_ID,
+            "client_secret": settings.GOOGLE_CLIENT_SECRET,
+            "refresh_token": oauth["refresh_token"],
+            "grant_type": "refresh_token",
+        },
+    )
+
+    if response.status_code != 200:
+        raise ValueError("token refresh failed")
+    
+    token = response.json()
+    expire = datetime.utcnow() + timedelta(seconds = token["expires_in"])
+    user.google_oauth = {
+        "access_token": token["access_token"],
+        "refresh_token": oauth["refresh_token"],
+        "expiry": expire.isoformat(),
+    }
+
+    try:
+        db.commit()
+        db.refresh(user)
+    except Exception:
+        raise
+    
+    return token["access_token"]
+
+def get_access_token(db: Session, user_id: UUID) -> str:
+    user = get_user_by_id(db, user_id)
+    # error handling
+    if user is None:
+        raise ValueError("user not found")
+    
+    oauth = user.google_oauth
+    if not oauth or not oauth.get("refresh_token"):
+        raise ValueError("no refresh token found")
+    
+    expire = datetime.fromisoformat(oauth["expiry"])
+    # refresh 10 minutes in advance
+    if datetime.utcnow() >= expire - timedelta(minutes=10):
+        return refresh_token(db, user_id)
+    
+    return oauth["access_token"]

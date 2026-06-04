@@ -6,6 +6,10 @@ from typing import Any
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from adapters.base import BaseToolAdapter
+from sqlalchemy.orm import Session
+from uuid import UUID
+from services.user_service import get_access_token
+
 class GmailTool(BaseToolAdapter):
     def __init__(self):
         super().__init__("gmail_tool")
@@ -110,9 +114,13 @@ class GmailTool(BaseToolAdapter):
 
         return simplified_emails
 
-    def execute(self, params: dict[str, Any]) -> Any: # main method called by orch
+    def execute(self, params: dict[str, Any], db: Session) -> Any: # main method called by orch
+        user_id: UUID = params.get("user_id")
+        if not user_id:
+            raise ValueError("user_id needed")
+        
         op = params.get("operation", "read")
-        access_token = params.get("access_token")
+        access_token = get_access_token(db, user_id)
 
         if not access_token:
             raise ValueError("access_token is required")

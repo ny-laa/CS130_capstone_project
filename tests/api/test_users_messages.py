@@ -70,16 +70,43 @@ def test_list_messages_404_when_user_not_found():
     mock_msgs.assert_not_called()  # never queried messages for an unknown user
 
 
-def _fake_user(full_name="Alex Johnson", email="alex@example.com"):
-    #mimics the User ORM row that the profile endpoints return
+def _fake_user(name="Alex Johnson", email="alex@example.com"):
+    #mimics the User ORM row that the profile endpoints return. UserResponse
+    #now reflects the full Profile-page settings surface, so every field
+    #it expects gets set explicitly -- MagicMock auto-attrs would hand
+    #pydantic Mock objects and fail validation.
     u = MagicMock()
     u.id = uuid4()
     u.phone_number = "+13105550199"
     u.email = email
-    u.full_name = full_name
+    u.name = name
+
+    # ── communication ──────────────────────────────────────────
     u.comm_style = "brief"
     u.preferred_channel = "sms"
+    u.call_urgency_threshold = "high"
+
+    # ── notification timing ────────────────────────────────────
     u.blocked_windows = None
+    u.keep_free_windows = None
+    u.active_days = None
+
+    # ── morning digest ─────────────────────────────────────────
+    u.morning_digest_enabled = True
+    u.morning_digest_time = None
+    u.morning_digest_content = "calendar"
+    u.morning_digest_travel_time = False
+
+    # ── escalation behavior ────────────────────────────────────
+    u.escalation_timeout_minutes = 30
+    u.auto_approve_low_risk = True
+    u.max_reminders = 3
+
+    # ── G's behavior ───────────────────────────────────────────
+    u.tone = "casual"
+    u.reminder_lead_time_minutes = 60
+    u.conflict_handling = "suggest"
+
     return u
 
 
@@ -94,7 +121,7 @@ def test_get_user_returns_profile():
 
     assert r.status_code == 200
     body = r.json()
-    assert body["full_name"] == "Alex Johnson"
+    assert body["name"] == "Alex Johnson"
     assert body["email"] == "alex@example.com"
     assert body["phone_number"] == "+13105550199"
 
@@ -112,23 +139,23 @@ def test_get_user_404_when_unknown():
 
 
 def test_patch_user_updates_profile():
-    updated = _fake_user(full_name="Alex P. Johnson", email="newer@example.com")
+    updated = _fake_user(name="Alex P. Johnson", email="newer@example.com")
 
     app.dependency_overrides[get_db] = _override_db
     with patch("api.users.update_user_profile", return_value=updated) as mock_update:
         client = TestClient(app)
         r = client.patch(
             f"/api/users/{updated.id}",
-            json={"full_name": "Alex P. Johnson", "email": "newer@example.com"},
+            json={"name": "Alex P. Johnson", "email": "newer@example.com"},
         )
     app.dependency_overrides.clear()
 
     assert r.status_code == 200
     body = r.json()
-    assert body["full_name"] == "Alex P. Johnson"
+    assert body["name"] == "Alex P. Johnson"
     assert body["email"] == "newer@example.com"
     kwargs = mock_update.call_args.kwargs
-    assert kwargs["full_name"] == "Alex P. Johnson"
+    assert kwargs["name"] == "Alex P. Johnson"
     assert kwargs["email"] == "newer@example.com"
 
 
@@ -141,7 +168,7 @@ def test_patch_user_404_when_user_missing():
         side_effect=ValueError("User not found"),
     ):
         client = TestClient(app)
-        r = client.patch(f"/api/users/{user_id}", json={"full_name": "x"})
+        r = client.patch(f"/api/users/{user_id}", json={"name": "x"})
     app.dependency_overrides.clear()
 
     assert r.status_code == 404
