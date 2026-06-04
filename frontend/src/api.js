@@ -228,12 +228,23 @@ export async function saveUser(data) {
   console.log('POST /api/users/me', data);
 }
 
+// kept for any callers still pointing at the old mock task-history view --
+// not used by the live Conversations page anymore (see getMessages below).
 export async function getTaskHistory() {
   return MOCK_TASK_HISTORY;
 }
 
-export async function getTasks() {
-  return MOCK_TASKS;
+// real backend fetch -- TaskResponse rows newest first.
+// shape: { id, status, type, description, plan_steps, escalation_deadline,
+//          created_at, updated_at }
+export async function getTasks(userId, limit = 50) {
+  return apiFetch(`/api/users/${userId}/tasks?limit=${limit}`);
+}
+
+// real backend fetch for the History page -- message audit log newest first.
+// shape: { id, content, direction, channel, timestamp, task_id, user_id }
+export async function getMessages(userId, limit = 200) {
+  return apiFetch(`/api/users/${userId}/messages?limit=${limit}`);
 }
 
 export async function approveEscalation(taskId) {
