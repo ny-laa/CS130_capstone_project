@@ -9,13 +9,21 @@ from adapters.base import BaseToolAdapter
 from sqlalchemy.orm import Session
 from uuid import UUID
 from services.user_service import get_access_token
+from config import settings
 
 class GmailTool(BaseToolAdapter):
     def __init__(self):
         super().__init__("gmail_tool")
 
-    def _build_service(self, access_token: str): # creates Gmail API service object w/ users access token
-        creds = Credentials(token=access_token)
+    def _build_service(self, access_token: str, refresh_token: str | None = None):
+        from google.oauth2.credentials import Credentials
+        creds = Credentials(
+            token=access_token,
+            refresh_token=refresh_token,
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=settings.GOOGLE_CLIENT_ID,
+            client_secret=settings.GOOGLE_CLIENT_SECRET,
+        )
         return build("gmail", "v1", credentials=creds)
 
     def _get_header(self, headers: list[dict[str, str]], header_name: str) -> str | None:
@@ -59,6 +67,7 @@ class GmailTool(BaseToolAdapter):
         query: str = "",
         max_results: int = 10,
         include_body: bool = False,
+        refresh_token: str | None = None,
     ) -> list[dict[str, Any]]:
         """
         query uses Gmail search syntax.

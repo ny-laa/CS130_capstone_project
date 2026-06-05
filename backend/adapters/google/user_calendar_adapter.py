@@ -2,6 +2,7 @@
 # fetches the user's token from google_oauth at construction and injects it transparently.
 # calls CalendarTool methods directly (bypassing execute's user_id/db path) since the
 # token is already resolved from the user object by the time TaskRunner calls this.
+# Used gen ai to resolve issues
 
 from typing import Any
 from datetime import datetime, timedelta

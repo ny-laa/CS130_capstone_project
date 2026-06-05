@@ -1,5 +1,6 @@
 # g-cal adapter handles reading + writing cal events
 # CalendarTool uses Google OAuth access token to call the g-cal API
+# Used gen ai to resolve issues
 
 from typing import Any
 from google.oauth2.credentials import Credentials
