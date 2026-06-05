@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from adapters.communication.business_call_tool import UserBusinessCallAdapter
 from adapters.communication.call_tool import OutboundCallTool
 from adapters.communication.sms_tool import SMSTool
 from adapters.communication.user_call_adapter import UserCallAdapter
@@ -54,9 +55,19 @@ Respond with a JSON object only, no extra text:
 }
 
 Use smalltalk when the parent is just chatting and no tools are needed — leave plan_steps empty.
-Tools you can use: sms_tool, calendar_tool, gmail_tool, call_tool
+Tools you can use: sms_tool, calendar_tool, gmail_tool, call_tool, business_call_tool
 
-The current time is provided in the context as `current_time_iso` (ISO 8601 with timezone offset). For sms_tool / call_tool, when the parent asks you to reach out *later* -- either an absolute time ("at 5pm", "tomorrow at 8am") OR a relative duration ("in 30 minutes", "in 2 hours") -- set `params.scheduled_at` to the absolute ISO 8601 timestamp (same timezone as `current_time_iso`) when the notification should fire. Examples: if current_time_iso is "2026-05-31T18:48:00-07:00" and the parent says "in 2 minutes", scheduled_at is "2026-05-31T18:50:00-07:00". If they say "at 6:55", it's "2026-05-31T18:55:00-07:00". Omit `scheduled_at` only when the parent wants the action to happen right now."""
+`business_call_tool` is used when the parent asks you to phone an external business or person on their behalf (e.g. "call the pizza place and order a large pepperoni", "call my doctor's office and reschedule"). Params: `to` (the business phone number, E.164 if available), `goal` (one sentence describing exactly what to accomplish — include any order details, addresses, times the parent gave you), and optionally `business_name`. Only plan a business_call_tool step when the parent supplied a phone number or a business clearly identifiable from context; if you don't have a number, ask the parent for one instead of guessing.
+
+When to ask a clarifying question FIRST instead of acting:
+You are a capable assistant — that means you should pause and think before committing on the parent's behalf, especially for irreversible or high-stakes actions. If anything material is missing or ambiguous for one of these, do NOT plan the step yet. Set task_type="smalltalk", leave plan_steps empty, and use response_message to ask the specific question(s) you need answered:
+  - business_call_tool: ALWAYS verify before placing the call — confirm the destination number, the exact details that go into `goal` (items, address, time, payment notes), and that the parent actually wants you to call right now. A phone call costs money, takes real time on someone's line, and commits to whatever you say.
+  - Purchases, paid bookings, or anything spending money on the parent's behalf — confirm amount, merchant, and any preferences.
+  - Calendar deletes or updates where you're not sure which event the parent means — ask which one.
+  - Outbound messages or calls to third parties (other family members, providers) where the recipient isn't obvious.
+Lower-stakes actions (reminders to the parent themselves, adding a personal calendar event with clear details, reading gmail, sending the parent an SMS reminder) can proceed without clarification — don't pester them. Judgment call: would a thoughtful human assistant double-check before doing this?
+
+The current time is provided in the context as `current_time_iso` (ISO 8601 with timezone offset). For sms_tool, call_tool, AND business_call_tool, when the parent asks you to do the action *later* -- either an absolute time ("at 5pm", "tomorrow at 8am") OR a relative duration ("in 30 minutes", "in 2 hours") -- set `params.scheduled_at` to the absolute ISO 8601 timestamp (same timezone as `current_time_iso`) when it should fire. Examples: if current_time_iso is "2026-05-31T18:48:00-07:00" and the parent says "in 2 minutes", scheduled_at is "2026-05-31T18:50:00-07:00". If they say "at 6:55", it's "2026-05-31T18:55:00-07:00". Omit `scheduled_at` only when the parent wants the action to happen right now. Scheduled actions persist in the DB and fire later via the worker, so you can confirm scheduling immediately in your reply (e.g. "Got it, I'll call the pizza place at 6:30pm.")."""
 
 # After tools execute, synthesize a natural reply from the results.
 _SYNTHESIS_PROMPT = 'You are G, a helpful AI secretary. Respond with ONLY valid JSON: {"response_message": "<short friendly reply>"}'
@@ -174,8 +185,16 @@ async def chat(body: ChatRequest, request: Request, db: Session = Depends(get_db
     # duplicate ETAs, and enqueues notify_user_task with eta= so celery fires the
     # SMS/call at the right time. TaskRunner doesn't know about scheduling and
     # would fire immediately, which is the bug we hit before.
+    # sms_tool, call_tool, and business_call_tool are all schedulable via
+    # dispatch -> celery (notify_user_task or run_plan_step_task depending
+    # on the tool). when claude attaches scheduled_at to one of these, we
+    # take the dispatch path; otherwise the plan runs inline through
+    # TaskRunner.
+    _SCHEDULABLE_TOOLS = ("sms_tool", "call_tool", "business_call_tool")
     has_scheduled_step = any(
-        isinstance(s, dict) and (s.get("params") or {}).get("scheduled_at")
+        isinstance(s, dict)
+        and s.get("tool") in _SCHEDULABLE_TOOLS
+        and (s.get("params") or {}).get("scheduled_at")
         for s in plan_steps_raw
     )
     if user and has_scheduled_step:
@@ -244,6 +263,7 @@ async def chat(body: ChatRequest, request: Request, db: Session = Depends(get_db
         tool_registry = {
             Tools.SMS_TOOL: UserSMSAdapter(user, sms_tool=_sms),
             Tools.CALL_TOOL: UserCallAdapter(user, call_tool=_call),
+            Tools.BUSINESS_CALL_TOOL: UserBusinessCallAdapter(user, call_tool=_call),
             Tools.CALENDAR_TOOL: UserCalendarAdapter(user),
             Tools.GMAIL_TOOL: UserGmailAdapter(user),
         }

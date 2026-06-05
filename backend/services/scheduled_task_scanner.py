@@ -26,6 +26,7 @@ from database import session_scope
 from models.datatypes import TaskStatus
 from models.task import Task as DBTask
 from services.notifications import notify_user
+from services.plan_step_executor import execute_step
 from services.task_service import (
     mark_task_complete,
     mark_task_failed,
@@ -34,6 +35,10 @@ from services.task_service import (
 from services.user_service import get_user_by_id
 
 logger = logging.getLogger("backend.services.scheduled_task_scanner")
+
+# Tools the scanner can fire as a safety-net for celery. Mirrors what
+# dispatch.run_plan accepts via scheduled_at.
+_SCHEDULABLE_TOOLS = ("sms_tool", "call_tool", "business_call_tool")
 
 # Tick cadence. Scheduled reminders rarely need sub-minute precision and
 # we don't want to hammer the DB. 30s is a reasonable balance.
@@ -48,21 +53,17 @@ def _first_step(task: DBTask) -> dict[str, Any] | None:
     return first if isinstance(first, dict) else None
 
 
-def _due_message(task: DBTask, now: datetime) -> tuple[str, str] | None:
-    """If this task is a scheduled notification that's due, return
-    (message, channel). Otherwise return None and the scanner skips it.
-
-    We only fire tasks whose first plan_step is sms_tool/call_tool with a
-    `scheduled_at` <= now. Anything else (calendar steps, immediate sends,
-    non-scheduled tasks) is out of scope -- those fire through TaskRunner
-    on the request thread, not here.
+def _due_step(task: DBTask, now: datetime) -> dict | None:
+    """If this task's first plan_step is a schedulable step whose
+    scheduled_at has passed, return the step. Otherwise None (scanner
+    skips it -- not due, not schedulable, or malformed).
     """
     step = _first_step(task)
     if step is None:
         return None
 
     tool = step.get("tool")
-    if tool not in ("sms_tool", "call_tool"):
+    if tool not in _SCHEDULABLE_TOOLS:
         return None
 
     params = step.get("params") or {}
@@ -79,13 +80,7 @@ def _due_message(task: DBTask, now: datetime) -> tuple[str, str] | None:
     if eta > now:
         return None  # not due yet
 
-    body = params.get("body") or params.get("message") or ""
-    if not body.strip():
-        logger.warning("task_id=%s scheduled but empty body, skipping", task.id)
-        return None
-
-    channel = "call" if tool == "call_tool" else "sms"
-    return body, channel
+    return step
 
 
 def scan_once(db: Session) -> int:
@@ -100,14 +95,13 @@ def scan_once(db: Session) -> int:
 
     fired = 0
     for task in pending:
-        ready = _due_message(task, now)
-        if ready is None:
+        step = _due_step(task, now)
+        if step is None:
             continue
-        message, channel = ready
 
         # Claim the task by flipping PENDING -> IN_PROGRESS before doing
-        # any work. If another tick or a celery worker races us, whoever
-        # wins commits first and the other will see IN_PROGRESS and skip.
+        # any work. If celery races us, whoever commits first wins; the
+        # other side will see IN_PROGRESS and skip.
         try:
             update_task_status(db, task.id, TaskStatus.IN_PROGRESS)
         except Exception as exc:
@@ -123,16 +117,30 @@ def scan_once(db: Session) -> int:
                 pass
             continue
 
-        logger.info(
-            "task_id=%s firing scheduled %s (eta passed)", task.id, channel,
-        )
+        tool = step.get("tool")
+        logger.info("task_id=%s firing scheduled tool=%s (eta passed)", task.id, tool)
+
+        # sms_tool / call_tool keep going through notify_user so outbound
+        # message rows + channel routing + history work exactly the same
+        # as notify_user_task does. Other tools (business_call_tool, etc.)
+        # use the generic executor.
         try:
-            result = notify_user(
-                db, user, message=message, channel=channel,
-                force=True, task_id=task.id,
-            )
+            if tool in ("sms_tool", "call_tool"):
+                params = step.get("params") or {}
+                body = params.get("body") or params.get("message") or ""
+                if not body.strip():
+                    logger.warning("task_id=%s scheduled but empty body, marking failed", task.id)
+                    mark_task_failed(db, task.id)
+                    continue
+                channel = "call" if tool == "call_tool" else "sms"
+                result = notify_user(
+                    db, user, message=body, channel=channel,
+                    force=True, task_id=task.id,
+                )
+            else:
+                result = execute_step(db, user, step)
         except Exception as exc:
-            logger.error("task_id=%s notify_user raised: %s", task.id, exc)
+            logger.error("task_id=%s execute raised: %s", task.id, exc)
             try:
                 mark_task_failed(db, task.id)
             except Exception:
@@ -144,7 +152,7 @@ def scan_once(db: Session) -> int:
                 mark_task_complete(db, task.id)
                 fired += 1
             else:
-                logger.warning("task_id=%s notify_user non-ok: %s", task.id, result)
+                logger.warning("task_id=%s non-ok result: %s", task.id, result)
                 mark_task_failed(db, task.id)
         except Exception as exc:
             logger.error("task_id=%s status close failed: %s", task.id, exc)

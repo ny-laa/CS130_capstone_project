@@ -14,12 +14,16 @@ from uuid import UUID
 class Tools(str, Enum):
     SMS_TOOL  = "sms_tool"
     CALL_TOOL = "call_tool"
+    # business_call_tool: G dials an external number (e.g. pizza place) and
+    # drives a goal-oriented back-and-forth with whoever answers, then SMSes
+    # the user a summary. distinct from call_tool which calls the user.
+    BUSINESS_CALL_TOOL = "business_call_tool"
     CALENDAR_TOOL       = "calendar_tool"
     CALENDAR_DELETE_TOOL = "calendar_delete_tool"
     SCRIPT_TOOL         = "script_tool"
     GMAIL_TOOL          = "gmail_tool"
 
-    # add more as we write. 
+    # add more as we write.
 
 
 
