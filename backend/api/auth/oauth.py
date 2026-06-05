@@ -13,6 +13,7 @@
 
 import base64, json, httpx
 from datetime import datetime, timedelta
+from urllib.parse import urlencode
 
 # Claude told me the following imports I should use for this file
 from fastapi import APIRouter, Depends, HTTPException
@@ -21,6 +22,8 @@ from sqlalchemy.orm import Session
 from config import settings
 from database import get_db
 from services.user_service import get_user_by_email, create_user, save_google_oauth
+from uuid import uuid4
+from services.auth_service import create_token
 
 router = APIRouter()
 
@@ -63,10 +66,11 @@ async def google_oauth(
     email = user_info["email"]
     name = user_info.get("name")
     user = get_user_by_email(db, email)
+    new_user = user is None
 
     # add user to database
-    if not user:
-        user = create_user(db, phone_number=f"pending_{email}", email=email, name=name)
+    if new_user:
+        user = create_user(db, phone_number=f"g_{str(uuid4())[:8]}", email=email, name=name)
 
     # save tokens and expire in 1 hour
     expire = datetime.utcnow() + timedelta(seconds=token["expires_in"])
@@ -78,4 +82,14 @@ async def google_oauth(
         expiry= expire.isoformat()
     )
     
-    return RedirectResponse(url="http://localhost:5173?auth=success")
+    app_token = create_token(user.id)
+
+    params = urlencode({
+        "user_id": str(user.id),
+        "email": email,
+        "name": name or "",
+        "token": app_token,
+        "new_user": str(new_user).lower(),
+    })
+
+    return RedirectResponse(url=f"{settings.FRONTEND_URL}/oauth/callback?{params}")

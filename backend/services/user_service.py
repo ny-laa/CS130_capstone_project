@@ -129,6 +129,11 @@ def create_user(
 #raise ValueError("A user with this email already exists!!") on collision. patching to your
 #own current email should be a no-op (no 409). roll back on commit failure.
 #[GenAI Use] LLM response:
+def is_placeholder_phone(phone_number: str | None) -> bool:
+    return (
+        phone_number is not None and phone_number.startswith("g_")
+    )
+
 def update_user_profile(
     db: Session,
     user_id: UUID,
@@ -157,17 +162,15 @@ def update_user_profile(
         # `user.name` would AttributeError.
         user.full_name = name
 
-    if phone_number is not None:
-        phone_number = normalize_phone(phone_number)
-        if phone_number != user.phone_number:
-            if user.phone_number is not None:
-                raise ValueError(
-                    "Phone number can't be changed once set. Contact support to re-verify."
-                )
-            clash = get_user_by_phone(db, phone_number)
-            if clash and clash.id != user_id:
-                raise ValueError("A user with this phone number already exists!!")
-            user.phone_number = phone_number
+    if phone_number is not None and phone_number != user.phone_number:
+        if user.phone_number is not None and not is_placeholder_phone(user.phone_number):
+            raise ValueError(
+                "Phone number can't be changed once set. Contact support to re-verify."
+            )
+        clash = get_user_by_phone(db, phone_number)
+        if clash and clash.id != user_id:
+            raise ValueError("A user with this phone number already exists!!")
+        user.phone_number = phone_number
 
     try:
         db.commit()

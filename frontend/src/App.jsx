@@ -11,6 +11,7 @@ import SignUp from './pages/SignUp';
 import SignIn from './pages/SignIn';
 import Step1Family from './pages/Onboard/Step1Family';
 import Step2Preferences from './pages/Onboard/Step2Preferences';
+import OAuthCallback from './pages/OAuthCallback';
 
 const NO_NAV_PATHS = ['/signup', '/signin', '/onboard'];
 
@@ -35,6 +36,7 @@ function AppContent() {
           <Route path="/signin" element={<SignIn />} />
           <Route path="/onboard/step1" element={<RequireAuth><Step1Family /></RequireAuth>} />
           <Route path="/onboard/step2" element={<RequireAuth><Step2Preferences /></RequireAuth>} />
+          <Route path="/oauth/callback" element={<OAuthCallback />} />
           <Route path="/register" element={<Register />} />
           <Route path="/tasks" element={<Tasks />} />
           <Route path="/chat" element={<Chat />} />

@@ -40,7 +40,8 @@ class Settings(BaseSettings):
     #google api -- calendar + gmail oauth
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
-    GOOGLE_REDIRECT_URI: str = "http://localhost:8000/auth/google/callback"
+    GOOGLE_REDIRECT_URI: str = "https://cs130capstoneproject-production.up.railway.app/oauth/google"
+    FRONTEND_URL: str = ""
 
     #celery
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"
