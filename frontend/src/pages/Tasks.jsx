@@ -72,6 +72,18 @@ function toCardTask(t) {
     ? stepParams.scheduled_at
     : (t.updated_at || t.created_at);
 
+  // For ESCALATION_PENDING tasks, derive a countdown start from the stored deadline.
+  // TaskCard adds 30 min to escalationCreatedAt to compute the expiry, so we pass
+  // deadline - 30min to make that math land on the real deadline.
+  let escalationQuestion = null;
+  let escalationCreatedAt = null;
+  if (displayStatus === 'ESCALATION_PENDING') {
+    escalationQuestion = t.escalation_question || 'G needs your approval to proceed. Approve or Deny.';
+    escalationCreatedAt = t.escalation_deadline
+      ? new Date(Date.parse(t.escalation_deadline) - 30 * 60 * 1000).toISOString()
+      : (t.updated_at || t.created_at);
+  }
+
   return {
     id: t.id,
     description: t.description,
@@ -80,6 +92,8 @@ function toCardTask(t) {
     createdAt: t.created_at,
     lastActivityIso,
     summary,
+    escalationQuestion,
+    escalationCreatedAt,
   };
 }
 
@@ -89,6 +103,18 @@ export default function Tasks() {
   const [issues, setIssues] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  function handleEscalationAction(taskId, action) {
+    setActive((prev) => prev.filter((t) => t.id !== taskId));
+    if (action !== 'approve') {
+      const task = active.find((t) => t.id === taskId);
+      if (task) {
+        setIssues((prev) => [
+          { ...task, status: 'FAILED', summary: 'Escalation denied.', lastActivityIso: new Date().toISOString() },
+          ...prev,
+        ]);
+      }
+    }
+  }
 
   useEffect(() => {
     const user = getUser();
@@ -135,7 +161,7 @@ export default function Tasks() {
       {active.length > 0 && (
         <div className="task-list">
           {active.map((t) => (
-            <TaskCard key={t.id} task={t} />
+            <TaskCard key={t.id} task={t} onEscalationAction={handleEscalationAction} />
           ))}
         </div>
       )}

@@ -55,7 +55,8 @@ Respond with a JSON object only, no extra text:
 }
 
 Use smalltalk when the parent is just chatting and no tools are needed — leave plan_steps empty.
-Tools you can use: sms_tool, calendar_tool, gmail_tool, call_tool
+Tools you can use: sms_tool, calendar_tool, calendar_delete_tool, gmail_tool, call_tool
+Use calendar_delete_tool when the parent wants to cancel or delete a calendar event.
 
 If user gives ambiguous hour like 9:00:
 - Pick the closest future time, calculate time between now and 9:00 AM and now and 9:00 PM and schedule for closest time.
@@ -270,6 +271,11 @@ async def chat(body: ChatRequest, request: Request, db: Session = Depends(get_db
         if in_mem.status == TaskStatus.ESCALATION_PENDING:
             escalated = True
             logger.info("task_id=%s escalation_pending", db_task.id if db_task else "?")
+            if db_task:
+                try:
+                    task_service.set_escalation_pending(db, db_task.id)
+                except Exception as exc:
+                    logger.warning("set_escalation_pending failed: %s", exc)
             reply = (
                 f"{reply}\n\nThis action needs your approval — check the Tasks tab."
             )

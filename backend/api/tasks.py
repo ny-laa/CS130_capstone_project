@@ -71,10 +71,12 @@ def approve_task(task_id: UUID, db: Session = Depends(get_db)):
 
     in_memory = _rebuild_in_memory_task(db_task)
 
-    # UserCalendarAdapter injects calendar_token transparently; force_overlap skips the availability check
+    # UserCalendarAdapter injects calendar_token transparently; force_overlap skips the availability check.
+    # CALENDAR_DELETE_TOOL shares the same adapter — delete is a write operation handled by UserCalendarAdapter.
     cal_adapter = UserCalendarAdapter(user, force_overlap=in_memory.force_overlap)
     tool_registry = {
         Tools.CALENDAR_TOOL: cal_adapter,
+        Tools.CALENDAR_DELETE_TOOL: cal_adapter,
         Tools.SMS_TOOL: _sms,
     }
 

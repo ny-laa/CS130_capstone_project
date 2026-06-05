@@ -65,35 +65,68 @@ function useCountdown(targetIso) {
   return `${mins}m ${secs.toString().padStart(2, '0')}s`;
 }
 
-function EscalationSection({ taskId, question, escalationCreatedAt }) {
+function EscalationSection({ taskId, question, escalationCreatedAt, onAction }) {
   const countdown = useCountdown(escalationCreatedAt);
   const { updateTask } = useTasks();
+  const [loading, setLoading] = useState(false);
+  const [popup, setPopup] = useState(null); // 'approved' | 'denied'
 
   async function handle(action) {
-    if (action === 'approve') {
-      await approveEscalation(taskId);
-      updateTask(taskId, { status: 'COMPLETED', summary: 'Escalation approved.' });
-    } else {
-      await denyEscalation(taskId);
-      updateTask(taskId, { status: 'FAILED', summary: 'Escalation denied.' });
+    setLoading(true);
+    try {
+      if (action === 'approve') {
+        await approveEscalation(taskId);
+        updateTask(taskId, { status: 'COMPLETED', summary: 'Escalation approved.' });
+      } else {
+        await denyEscalation(taskId);
+        updateTask(taskId, { status: 'FAILED', summary: 'Escalation denied.' });
+      }
+      setPopup(action === 'approve' ? 'approved' : 'denied');
+      setTimeout(() => {
+        setPopup(null);
+        if (onAction) onAction(action);
+      }, 2500);
+    } catch {
+      // keep buttons enabled so the user can retry
+    } finally {
+      setLoading(false);
     }
   }
 
   return (
-    <div className="escalation-section">
-      <p className="escalation-question">{question}</p>
-      <div className="escalation-footer">
-        <span className="escalation-timer">Expires in {countdown}</span>
-        <div className="escalation-actions">
-          <button className="btn-approve" onClick={() => handle('approve')}>Approve</button>
-          <button className="btn-deny" onClick={() => handle('deny')}>Deny</button>
+    <>
+      {popup && (
+        <div className="escalation-popup-overlay" onClick={() => { setPopup(null); if (onAction) onAction(popup); }}>
+          <div className="escalation-popup">
+            <div className="escalation-popup-icon">{popup === 'approved' ? '✅' : '🚫'}</div>
+            <p className="escalation-popup-title" style={{ color: popup === 'approved' ? '#10b981' : '#ef4444' }}>
+              {popup === 'approved' ? 'Task Approved' : 'Task Denied'}
+            </p>
+            <p className="escalation-popup-sub">
+              {popup === 'approved' ? 'G will proceed with this action.' : 'G will not proceed with this action.'}
+            </p>
+          </div>
+        </div>
+      )}
+      <div className="escalation-section">
+        <p className="escalation-question">{question}</p>
+        <div className="escalation-footer">
+          <span className="escalation-timer">Expires in {countdown}</span>
+          <div className="escalation-actions">
+            <button className="btn-approve" onClick={() => handle('approve')} disabled={loading}>
+              {loading ? '…' : 'Approve'}
+            </button>
+            <button className="btn-deny" onClick={() => handle('deny')} disabled={loading}>
+              {loading ? '…' : 'Deny'}
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }
 
-export default function TaskCard({ task }) {
+export default function TaskCard({ task, onEscalationAction }) {
   const { id, description, type, status, createdAt, summary, escalationQuestion, escalationCreatedAt } = task;
 
   return (
@@ -114,6 +147,7 @@ export default function TaskCard({ task }) {
           taskId={id}
           question={escalationQuestion}
           escalationCreatedAt={escalationCreatedAt}
+          onAction={onEscalationAction ? (action) => onEscalationAction(id, action) : undefined}
         />
       )}
 
