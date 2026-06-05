@@ -257,6 +257,12 @@ class TaskPlanner:
             1. calendar_tool with operation "check_availability" — check if the time slot is free
             2. calendar_tool with operation "write" — create/update/move/delete the event
 
+            CRITICAL: For calendar_tool steps, ALWAYS use exactly these param names:
+            - "operation": one of "check_availability", "read", or "write"  
+            - "start_time": ISO 8601 datetime string (e.g. "2026-06-05T17:00:00-07:00")
+            - "end_time": ISO 8601 datetime string
+            Never use check_time, query_time, target_time, or any other variation.
+
             Return ONLY valid JSON in this exact shape:
 
             {
@@ -279,6 +285,12 @@ class TaskPlanner:
                     1. gmail_tool — search a specific email
                     2. calendar_tool — look up a specific event
                     3. sms_tool — send the result back to the user
+
+                CRITICAL: For calendar_tool steps, ALWAYS use exactly these param names:
+                - "operation": one of "check_availability", "read", or "write"  
+                - "start_time": ISO 8601 datetime string (e.g. "2026-06-05T17:00:00-07:00")
+                - "end_time": ISO 8601 datetime string
+                Never use check_time, query_time, target_time, or any other variation.
 
                 Return ONLY valid JSON in this exact shape:
 

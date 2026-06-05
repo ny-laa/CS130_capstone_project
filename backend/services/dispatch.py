@@ -9,6 +9,8 @@
 
 import os
 import sys
+from adapters.google.user_calendar_adapter import UserCalendarAdapter
+from adapters.google.user_gmail_adapter import UserGmailAdapter
 
 # radhika's google adapters use `from backend.X` absolute imports. uvicorn
 # runs from backend/ so we add the repo root here (this is the only file
@@ -186,20 +188,19 @@ def run_plan(plan: dict, user: User, db: Session | None = None) -> list[dict]:
         # Inject the right token for google tools
         # used claude to help me figure out what changes need to be made to this section based on
         # oauth implementation
-        if tool_name in ("calendar_tool", "gmail_tool"):
-            params["user_id"] = user.id
-
-        adapter = TOOL_REGISTRY.get(tool_name)
+        if tool_name == "calendar_tool":
+            adapter = UserCalendarAdapter(user)
+        elif tool_name == "gmail_tool":
+            adapter = UserGmailAdapter(user)
+        else:
+            adapter = TOOL_REGISTRY.get(tool_name)
         if adapter is None:
             print(f"[dispatch] unknown tool '{tool_name}', skipping step", flush=True)
             results.append({"tool": tool_name, "status": "skipped", "error": "unknown tool"})
             continue
 
         try:
-            if tool_name in ("calendar_tool", "gmail_tool"):
-                result = adapter.execute(params, db)
-            else:
-                result = adapter.execute(params)
+            result = adapter.execute(params)
             results.append({"tool": tool_name, "status": "ok", "result": result})
         except Exception as exc:
             print(f"[dispatch] {tool_name} failed: {type(exc).__name__}: {exc}", flush=True)
