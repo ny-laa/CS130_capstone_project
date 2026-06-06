@@ -1,7 +1,6 @@
 # g-cal adapter handles reading + writing cal events
 # CalendarTool uses Google OAuth access token to call the g-cal API
-# access token is passed directly in params for now, will fetch token using user_id after auth + db is fully wired
-
+# Used gen ai to resolve issues
 
 from typing import Any
 from google.oauth2.credentials import Credentials
@@ -10,25 +9,33 @@ from adapters.base import BaseToolAdapter
 from services.user_service import get_access_token
 from uuid import UUID
 from sqlalchemy.orm import Session
+from config import settings
+
 
 class CalendarTool(BaseToolAdapter):
     def __init__(self):
         super().__init__("calendar_tool")
 
-    def _build_service(self, access_token: str): #creates g-cal API service object w/ user's access tokenn
-        creds = Credentials(token=access_token)
+    def _build_service(self, access_token: str, refresh_token: str | None = None):
+        creds = Credentials(
+            token=access_token,
+            refresh_token=refresh_token,
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=settings.GOOGLE_CLIENT_ID,
+            client_secret=settings.GOOGLE_CLIENT_SECRET,
+        )
         return build("calendar", "v3", credentials=creds)
 
-    def read( #reads cal events within time window. time_min and time_max should be ISO datetime strings, ex: 2026-05-24T00:00:00Z
+    def read(
         self,
         access_token: str,
         time_min: str,
         time_max: str,
         calendar_id: str = "primary",
-        max_results: int = 10, #10 for now, perhaps will change later 
+        max_results: int = 10,
+        refresh_token: str | None = None,
     ) -> list[dict[str, Any]]:
- 
-        service = self._build_service(access_token) #creates API service object
+        service = self._build_service(access_token, refresh_token)
         events_result = (
             service.events()
             .list(
@@ -43,7 +50,6 @@ class CalendarTool(BaseToolAdapter):
         )
         events = events_result.get("items", [])
 
-        # returning relevant fieldss for the orchestrator
         simplified_events = []
         for event in events:
             simplified_events.append(
@@ -56,18 +62,17 @@ class CalendarTool(BaseToolAdapter):
                     "description": event.get("description"),
                 }
             )
-
         return simplified_events
 
-    def check_availability( 
+    def check_availability(
         self,
         access_token: str,
         start_time: str,
         end_time: str,
         calendar_id: str = "primary",
+        refresh_token: str | None = None,
     ) -> dict[str, Any]:
-
-        service = self._build_service(access_token)
+        service = self._build_service(access_token, refresh_token)
 
         request_body = {
             "timeMin": start_time,
@@ -87,64 +92,52 @@ class CalendarTool(BaseToolAdapter):
             "busy_windows": busy_windows,
         }
 
-    def write( #creates, moves, updates, or deletes cal events 
+    def write(
         self,
         access_token: str,
         action: str,
         event_body: dict[str, Any] | None = None,
         event_id: str | None = None,
         calendar_id: str = "primary",
+        refresh_token: str | None = None,
     ) -> dict[str, Any]:
-        
-        service = self._build_service(access_token)
+        service = self._build_service(access_token, refresh_token)
 
         if action == "create":
             if event_body is None:
                 raise ValueError("event_body is required to create an event")
-
             created_event = (
                 service.events()
                 .insert(calendarId=calendar_id, body=event_body)
                 .execute()
             )
-            return {
-                "status": "created",
-                "event": created_event,
-            }
+            return {"status": "created", "event": created_event}
 
         if action == "update" or action == "move":
             if event_id is None:
                 raise ValueError("event_id is required to update or move an event")
             if event_body is None:
                 raise ValueError("event_body is required to update or move an event")
-
             updated_event = (
                 service.events()
                 .patch(calendarId=calendar_id, eventId=event_id, body=event_body)
                 .execute()
             )
-            return {
-                "status": "updated",
-                "event": updated_event,
-            }
+            return {"status": "updated", "event": updated_event}
 
         if action == "delete":
             if event_id is None:
                 raise ValueError("event_id is required to delete an event")
-
             service.events().delete(calendarId=calendar_id, eventId=event_id).execute()
-            return {
-                "status": "deleted",
-                "event_id": event_id,
-            }
+            return {"status": "deleted", "event_id": event_id}
 
         raise ValueError(f"Unsupported calendar action: {action}")
 
-    def execute(self, params: dict[str, Any], db: Session) -> Any: #main method called by orch
+    def execute(self, params: dict[str, Any], db: Session) -> Any:
         user_id: UUID = params.get("user_id")
         if not user_id:
             raise ValueError("user_id needed")
-        
+
         op = params.get("operation")
         access_token = get_access_token(db, user_id)
 

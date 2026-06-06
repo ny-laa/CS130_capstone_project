@@ -1,117 +1,23 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { isLoggedIn, setToken, setUser } from '../auth';
-import { register } from '../api';
+import { isLoggedIn } from '../auth';
 import GoogleSignOn from '../components/registration/GoogleAuthButton';
 
 export default function SignUp() {
   const navigate = useNavigate();
-  const [form, setForm] = useState({ name: '', email: '', password: '', confirm: '' });
-  const [errors, setErrors] = useState({});
-  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (isLoggedIn()) navigate('/tasks', { replace: true });
   }, [navigate]);
 
-  function validate() {
-    const e = {};
-    if (!form.name.trim()) e.name = 'Name is required.';
-    if (!form.email.trim()) e.email = 'Email is required.';
-    if (!form.password) e.password = 'Password is required.';
-    else if (form.password.length < 8) e.password = 'Password must be at least 8 characters.';
-    if (form.password !== form.confirm) e.confirm = 'Passwords do not match.';
-    return e;
-  }
-
-  async function handleSubmit(e) {
-    e.preventDefault();
-    const errs = validate();
-    if (Object.keys(errs).length) { setErrors(errs); return; }
-
-    setSubmitting(true);
-    setErrors({});
-    try {
-      const { user, token } = await register(form.name.trim(), form.email.trim(), form.password);
-      setUser(user);
-      setToken(token);
-      navigate('/onboard/step1');
-    } catch (err) {
-      setErrors({ form: err.message || 'Registration failed. Please try again.' });
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  function set(field) {
-    return (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
-  }
-
   return (
     <div className="signup-page">
       <div className="signup-card">
         <div className="signup-logo">G</div>
-        <p className="signup-tagline">Your AI secretary, over text.</p>
+        <p className="signup-tagline">Create your G account with Google.</p>
 
-        {errors.form && <p className="auth-error auth-error--banner">{errors.form}</p>}
+        <GoogleSignOn mode="signup" />
 
-        <form className="auth-form" onSubmit={handleSubmit} noValidate>
-          <div className="auth-field">
-            <input
-              className={`auth-input${errors.name ? ' auth-input--error' : ''}`}
-              type="text"
-              placeholder="Full name"
-              value={form.name}
-              onChange={set('name')}
-              autoComplete="name"
-            />
-            {errors.name && <p className="auth-error">{errors.name}</p>}
-          </div>
-
-          <div className="auth-field">
-            <input
-              className={`auth-input${errors.email ? ' auth-input--error' : ''}`}
-              type="email"
-              placeholder="Email"
-              value={form.email}
-              onChange={set('email')}
-              autoComplete="email"
-            />
-            {errors.email && <p className="auth-error">{errors.email}</p>}
-          </div>
-
-          <div className="auth-field">
-            <input
-              className={`auth-input${errors.password ? ' auth-input--error' : ''}`}
-              type="password"
-              placeholder="Password"
-              value={form.password}
-              onChange={set('password')}
-              autoComplete="new-password"
-            />
-            {errors.password && <p className="auth-error">{errors.password}</p>}
-          </div>
-
-          <div className="auth-field">
-            <input
-              className={`auth-input${errors.confirm ? ' auth-input--error' : ''}`}
-              type="password"
-              placeholder="Confirm password"
-              value={form.confirm}
-              onChange={set('confirm')}
-              autoComplete="new-password"
-            />
-            {errors.confirm && <p className="auth-error">{errors.confirm}</p>}
-          </div>
-
-          <button className="auth-btn" type="submit" disabled={submitting}>
-            {submitting ? 'Creating account…' : 'Create account'}
-          </button>
-        </form>
-        <div className="auth-google">
-          <span>or</span>
-        </div>
-        <GoogleSignOn/>
         <p className="signup-footer">
           Already have an account?{' '}
           <Link to="/signin" className="link-btn">Sign in</Link>

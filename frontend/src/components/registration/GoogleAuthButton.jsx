@@ -23,6 +23,7 @@ function GoogleSignOn() {
         // to make tokens persist for calender/mail, add outh2
         const initClient = () => {
             const client_id = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+            if (!client_id) return;
             curClient.current = window.google.accounts.oauth2.initCodeClient({
                 client_id, 
                 scope: ACCESS,

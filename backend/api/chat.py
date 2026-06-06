@@ -5,6 +5,7 @@
 import json
 import logging
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request
@@ -68,6 +69,10 @@ You are a capable assistant — that means you should pause and think before com
 Lower-stakes actions (reminders to the parent themselves, adding a personal calendar event with clear details, reading gmail, sending the parent an SMS reminder) can proceed without clarification — don't pester them. Judgment call: would a thoughtful human assistant double-check before doing this?
 
 The current time is provided in the context as `current_time_iso` (ISO 8601 with timezone offset). For sms_tool, call_tool, AND business_call_tool, when the parent asks you to do the action *later* -- either an absolute time ("at 5pm", "tomorrow at 8am") OR a relative duration ("in 30 minutes", "in 2 hours") -- set `params.scheduled_at` to the absolute ISO 8601 timestamp (same timezone as `current_time_iso`) when it should fire. Examples: if current_time_iso is "2026-05-31T18:48:00-07:00" and the parent says "in 2 minutes", scheduled_at is "2026-05-31T18:50:00-07:00". If they say "at 6:55", it's "2026-05-31T18:55:00-07:00". Omit `scheduled_at` only when the parent wants the action to happen right now. Scheduled actions persist in the DB and fire later via the worker, so you can confirm scheduling immediately in your reply (e.g. "Got it, I'll call the pizza place at 6:30pm.")."""
+If user gives ambiguous hour like 9:00:
+- Pick the closest future time, calculate time between now and 9:00 AM and now and 9:00 PM and schedule for closest time.
+
+The current time is provided in the context as `current_time_iso` (ISO 8601 with timezone offset). Always calculate relative times from current_time_iso exactly. Do not use UTC unless current_time_iso is UTC. Preserve the timezone offset from current_time_iso in scheduled_at. For sms_tool / call_tool, when the parent asks you to reach out *later* -- either an absolute time ("at 5pm", "tomorrow at 8am") OR a relative duration ("in 30 minutes", "in 2 hours") -- set `params.scheduled_at` to the absolute ISO 8601 timestamp (same timezone as `current_time_iso`) when the notification should fire. Examples: if current_time_iso is "2026-05-31T18:48:00-07:00" and the parent says "in 2 minutes", scheduled_at is "2026-05-31T18:50:00-07:00". If they say "at 6:55", it's "2026-05-31T18:55:00-07:00". Omit `scheduled_at` only when the parent wants the action to happen right now."""
 
 # After tools execute, synthesize a natural reply from the results.
 _SYNTHESIS_PROMPT = 'You are G, a helpful AI secretary. Respond with ONLY valid JSON: {"response_message": "<short friendly reply>"}'
@@ -152,7 +157,12 @@ async def chat(body: ChatRequest, request: Request, db: Session = Depends(get_db
         logger.info("no user — using %d in-session messages as history", len(history))
 
     # build context
-    context: dict = {"current_time_iso": datetime.now().astimezone().isoformat()}
+    USER_TIMEZONE = ZoneInfo("America/Los_Angeles")
+
+    context: dict = {
+        "current_time_iso": datetime.now(USER_TIMEZONE).isoformat(),
+        "timezone": "America/Los_Angeles",
+    }
     if user:
         try:
             context.update(build_user_context(db, user.id))
@@ -166,7 +176,8 @@ async def chat(body: ChatRequest, request: Request, db: Session = Depends(get_db
         plan = _llm.handle(body.message, _CHAT_SYSTEM_PROMPT, context=context, history=history)
     except Exception as exc:
         logger.error("Claude call failed: %s", exc)
-        return {"reply": "Sorry, I had trouble with that. Try again?"}
+        return {"reply": f"Claude failed: {exc}"}
+        #return {"reply": "Sorry, I had trouble with that. Try again?"}
 
     task_type = plan.get("task_type", "smalltalk")
     reply = (plan.get("response_message") or "").strip() or "Got it."
