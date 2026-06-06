@@ -183,7 +183,7 @@ async def chat(body: ChatRequest, request: Request, db: Session = Depends(get_db
     plan_steps_raw = plan.get("plan_steps") or []
 
     # smalltalk or no steps → direct reply, no task needed
-    if task_type == "smalltalk" or not plan_steps_raw:
+    if task_type == "smalltalk" and not plan_steps_raw:
         logger.info("direct reply (no task), task_type=%s", task_type)
         _persist_assistant_reply(db, user, reply)
         return _format_response(reply, plan, task_type, task_id=None, escalated=False)
