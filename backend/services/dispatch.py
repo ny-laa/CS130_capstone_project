@@ -38,6 +38,7 @@ from services.task_service import (
     update_plan_steps,
 )
 from workers.tasks.notifications import notify_user_task
+from workers.tasks.plan_step import run_plan_step_task
 
 
 # Tool name string -> adapter instance. Keys match the strings claude puts
@@ -182,6 +183,63 @@ def run_plan(plan: dict, user: User, db: Session | None = None) -> list[dict]:
                     results.append({"tool": tool_name, "status": "ok", "result": result})
             except Exception as exc:
                 print(f"[dispatch] {tool_name} failed: {type(exc).__name__}: {exc}", flush=True)
+                results.append({"tool": tool_name, "status": "error", "error": str(exc)})
+            continue
+
+        # business_call_tool -- G calls an external business on the user's
+        # behalf. Handled here (not through TOOL_REGISTRY) because (a) we
+        # need the user object to build the adapter and (b) when
+        # scheduled_at is set we route through Celery so it fires later,
+        # same shape as sms reminders.
+        if tool_name == "business_call_tool" and db is not None:
+            scheduled_at_raw = params.get("scheduled_at")
+            try:
+                if scheduled_at_raw:
+                    eta = datetime.fromisoformat(scheduled_at_raw)
+                    if eta < datetime.now(eta.tzinfo):
+                        print(
+                            f"[dispatch] business_call scheduled_at {scheduled_at_raw} in the past, firing now",
+                            flush=True,
+                        )
+                    # persist the task row so the dashboard shows it as
+                    # PENDING immediately; celery's run_plan_step_task owns
+                    # the IN_PROGRESS -> COMPLETED/FAILED transitions at eta.
+                    goal = (params.get("goal") or params.get("message") or "").strip()
+                    biz = params.get("business_name") or "a business"
+                    description = (
+                        f"Call {biz} at {eta.strftime('%b %-d, %-I:%M %p')}: "
+                        f"{goal[:80]}"
+                    )
+                    task = create_task(
+                        db,
+                        user_id=user.id,
+                        task_type=TaskType.REMINDER,
+                        description=description,
+                        plan_steps=[step],
+                    )
+                    run_plan_step_task.apply_async(
+                        args=[str(user.id), step, str(task.id)],
+                        eta=eta,
+                    )
+                    results.append({
+                        "tool": tool_name,
+                        "status": "scheduled",
+                        "scheduled_at": eta.isoformat(),
+                        "task_id": str(task.id),
+                    })
+                else:
+                    # immediate -- build the adapter inline and fire.
+                    # this is how the voice webhook reaches business_call_tool
+                    # (it calls dispatch.run_plan unconditionally; without this
+                    # branch the step would fall through to "unknown tool").
+                    from adapters.communication.business_call_tool import (
+                        UserBusinessCallAdapter,
+                    )
+                    adapter = UserBusinessCallAdapter(user)
+                    result = adapter.execute(params)
+                    results.append({"tool": tool_name, "status": "ok", "result": result})
+            except Exception as exc:
+                print(f"[dispatch] business_call_tool failed: {type(exc).__name__}: {exc}", flush=True)
                 results.append({"tool": tool_name, "status": "error", "error": str(exc)})
             continue
 

@@ -7,6 +7,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
+from adapters.communication.business_call_tool import UserBusinessCallAdapter
 from adapters.communication.call_tool import OutboundCallTool
 from adapters.communication.sms_tool import SMSTool
 from adapters.communication.user_call_adapter import UserCallAdapter
@@ -63,9 +64,19 @@ Respond with a JSON object only, no extra text:
     "response_message": "<short reply, will be sent as SMS>"
 }
 
-Tools you can use: sms_tool, calendar_tool, gmail_tool, call_tool
+Tools you can use: sms_tool, calendar_tool, gmail_tool, call_tool, business_call_tool
 
-The current time is provided in the context as `current_time_iso` (ISO 8601 with timezone offset). For sms_tool / call_tool, when the parent asks you to reach out *later* -- either an absolute time ("at 5pm", "tomorrow at 8am") OR a relative duration ("in 30 minutes", "in 2 hours") -- set `params.scheduled_at` to the absolute ISO 8601 timestamp (same timezone as `current_time_iso`) when the notification should fire. Examples: if current_time_iso is "2026-05-31T18:48:00-07:00" and the parent says "in 2 minutes", scheduled_at is "2026-05-31T18:50:00-07:00". If they say "at 6:55", it's "2026-05-31T18:55:00-07:00". Omit `scheduled_at` when the parent wants the action immediately."""
+`business_call_tool` is used when the parent asks you to phone an external business or person on their behalf (e.g. "call the pizza place and order a large pepperoni"). Params: `to` (business phone number), `goal` (one sentence describing exactly what to accomplish, including any order details / times / addresses the parent gave), optional `business_name`. Only plan it when you actually have a phone number to dial; otherwise ask.
+
+When to ask a clarifying question FIRST instead of acting:
+You are a capable assistant — pause and think before committing on the parent's behalf for high-stakes or irreversible actions. If anything material is missing/ambiguous, set task_type="smalltalk", leave plan_steps empty, and use response_message to ask the specific question(s) you need answered:
+  - business_call_tool: ALWAYS verify before dialing — confirm the number, the exact `goal` details (items, address, time, payment), and that the parent wants you to call now. Real call, real money, real commitment.
+  - Purchases / paid bookings / anything spending money — confirm amount and merchant.
+  - Calendar deletes/updates where it's unclear which event the parent means — ask which.
+  - Outbound to third parties where the recipient isn't obvious — confirm.
+Lower-stakes (reminders to the parent themselves, clear personal calendar entries, reading gmail) can proceed without clarification — don't pester.
+
+The current time is provided in the context as `current_time_iso` (ISO 8601 with timezone offset). For sms_tool, call_tool, AND business_call_tool, when the parent asks you to do the action *later* -- either an absolute time ("at 5pm", "tomorrow at 8am") OR a relative duration ("in 30 minutes", "in 2 hours") -- set `params.scheduled_at` to the absolute ISO 8601 timestamp (same timezone as `current_time_iso`) when it should fire. Examples: if current_time_iso is "2026-05-31T18:48:00-07:00" and the parent says "in 2 minutes", scheduled_at is "2026-05-31T18:50:00-07:00". If they say "at 6:55", it's "2026-05-31T18:55:00-07:00". Omit `scheduled_at` only when the parent wants the action immediately."""
 # [GenAI Use] LLM Response End
 # [GenAI Use] Reflection: shape matches the voice prompt deliberately so when
 # elliot's orchestrator takes over, it can route both channels through the
@@ -142,8 +153,14 @@ async def inbound_sms(
     # eta=. TaskRunner doesn't know about scheduling and would fire the
     # SMS/call immediately, which defeats "remind me at 2:30pm".
     plan_steps_raw = plan.get("plan_steps") or []
+    # sms_tool / call_tool / business_call_tool are all schedulable via
+    # dispatch -> celery (notify_user_task or run_plan_step_task). other
+    # tools (calendar/gmail) always fire inline through TaskRunner.
+    _SCHEDULABLE_TOOLS = ("sms_tool", "call_tool", "business_call_tool")
     has_scheduled_step = any(
-        isinstance(s, dict) and (s.get("params") or {}).get("scheduled_at")
+        isinstance(s, dict)
+        and s.get("tool") in _SCHEDULABLE_TOOLS
+        and (s.get("params") or {}).get("scheduled_at")
         for s in plan_steps_raw
     )
 
@@ -201,6 +218,7 @@ async def inbound_sms(
                     Tools.CALENDAR_TOOL: UserCalendarAdapter(user),
                     Tools.SMS_TOOL: UserSMSAdapter(user, sms_tool=_sms),
                     Tools.CALL_TOOL: UserCallAdapter(user, call_tool=_call),
+                    Tools.BUSINESS_CALL_TOOL: UserBusinessCallAdapter(user, call_tool=_call),
                 }
                 TaskRunner(tool_registry).run(in_mem)
                 task_service.update_task_status(db, db_task.id, in_mem.status)

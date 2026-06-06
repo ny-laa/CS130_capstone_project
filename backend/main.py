@@ -2,7 +2,10 @@
 #local: uvicorn main:app --reload
 #cloud run: Dockerfile binds 0.0.0.0:$PORT
 
+import asyncio
+import logging
 import os
+from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,14 +22,38 @@ from api import tasks as tasks_api
 from api.webhooks import call, sms
 from config import settings
 from database import get_db
+from services import scheduled_task_scanner
 
 from api.auth.oauth import router as oauth_router
 from api.chat import router as chat_router
+
+logger = logging.getLogger("backend.main")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Start the scheduled-task scanner. It's the safety net behind the
+    # celery worker for scheduled SMS/call reminders -- if celery is down
+    # or a job got lost, the scanner picks up dangling PENDING tasks
+    # whose scheduled_at has passed and fires them via notify_user.
+    scanner_task = asyncio.create_task(scheduled_task_scanner.run_loop())
+    logger.info("scheduled_task_scanner started")
+    try:
+        yield
+    finally:
+        scanner_task.cancel()
+        try:
+            await scanner_task
+        except (asyncio.CancelledError, Exception):
+            pass
+        logger.info("scheduled_task_scanner stopped")
+
 
 app = FastAPI(
     title="G",
     description="parent's personal ai secretary -- backend",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(

@@ -28,6 +28,7 @@ app = Celery(
     include=[
         "workers.tasks.notifications",
         "workers.tasks.morning_digest",
+        "workers.tasks.plan_step",
     ],
 )
 
