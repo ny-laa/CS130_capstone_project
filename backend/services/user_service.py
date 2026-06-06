@@ -170,7 +170,7 @@ def update_user_profile(
         clash = get_user_by_phone(db, phone_number)
         if clash and clash.id != user_id:
             raise ValueError("A user with this phone number already exists!!")
-        user.phone_number = phone_number
+        user.phone_number = normalize_phone(phone_number)
 
     try:
         db.commit()

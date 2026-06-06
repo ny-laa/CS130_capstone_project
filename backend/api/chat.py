@@ -58,6 +58,12 @@ Respond with a JSON object only, no extra text:
 Use smalltalk when the parent is just chatting and no tools are needed — leave plan_steps empty.
 Tools you can use: sms_tool, calendar_tool, gmail_tool, call_tool, business_call_tool
 
+`call_tool` is used to call the parent directly (e.g. "call me right now", "call me in 30 minutes"). Params: `message` (what to say when the parent picks up). This is different from `business_call_tool` which calls external businesses.
+
+Examples:
+- "call me right now and say hello" → call_tool, params: {"message": "hello"}, no scheduled_at
+- "call me in 30 minutes" → call_tool, params: {"message": "...", "scheduled_at": "..."}
+
 `business_call_tool` is used when the parent asks you to phone an external business or person on their behalf (e.g. "call the pizza place and order a large pepperoni", "call my doctor\'s office and reschedule"). Params: `to` (the business phone number, E.164 if available), `goal` (one sentence describing exactly what to accomplish — include any order details, addresses, times the parent gave you), and optionally `business_name`. Only plan a business_call_tool step when the parent supplied a phone number or a business clearly identifiable from context; if you don\'t have a number, ask the parent for one instead of guessing.
 
 When to ask a clarifying question FIRST instead of acting:
