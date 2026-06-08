@@ -4,10 +4,12 @@
 // https://developers.google.com/identity/gsi/web/guides/display-button#javascript
 // https://vite.dev/guide/env-and-mode
 // Update: used Claude to understand that I need to use oauth2 instead to have persistent tokens
+// Prompt: I am running into issues using GSI to save token and I want to access the calender and gmail, 
+// what is your insight? Answer: Claude recommended oauth2 as it saves tokens
 
 import {useEffect, useRef} from "react";
 
-// Used Claude to get the correct access/scope
+// Used Claude to get the correct access/scope (followup to previous prompt, give me the correct access and scope)
 const ACCESS = [
     "openid",
     "email",
