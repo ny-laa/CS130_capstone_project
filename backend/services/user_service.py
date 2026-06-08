@@ -217,6 +217,7 @@ def update_user_preferences(db: Session, user_id: UUID, **updates) -> User:
     return user
 
 # Used Claude to connect/update the following two functions to match the oauth changes made in oauth.py
+# Based on oauth.py and user_service.py, connect and update the following two functions to match the changes made
 def save_google_oauth(
     db: Session,
     user_id: UUID,

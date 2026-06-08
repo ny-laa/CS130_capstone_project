@@ -3,7 +3,8 @@
 # this is how G gets access to google calendar and gmail
 # used docs at https://developers.google.com/identity/protocols/oauth2, https://fastapi.tiangolo.com/,
 # https://docs.python.org/3/library/base64.html for info on how to implement this file
-# Claude gave me the following structure for the file:
+# Claude gave me the following structure for the file after the prompt: I want to create an authentication
+# pipeline provided [files], give me a structure:
 # Route definition — GET /oauth/google receives the code Google sends back
 # Token exchange — POST to Google with the code, get back access/refresh tokens
 # User decode — pull email/name out of the id_token JWT
@@ -16,6 +17,7 @@ from datetime import datetime, timedelta
 from urllib.parse import urlencode
 
 # Claude told me the following imports I should use for this file
+# Prompt: give me the appropriate imports based on the [files] for creating an oauth page.
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session

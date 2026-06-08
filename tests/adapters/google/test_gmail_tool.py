@@ -19,6 +19,7 @@ def test_execute_requires_user_id(mock_get_token):
 
 
 # had claude patch test after changes
+# prompt: given [old test] and [new changes], modify the test
 @patch("adapters.google.gmail_tool.get_access_token")
 def test_execute_routes_read_op(mock_get_token):
     mock_get_token.return_value = "fake-token"

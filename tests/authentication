@@ -3,6 +3,8 @@ import { describe, it, expect, vi } from "vitest";
 import GoogleSignOn from "../../frontend/src/components/registration/GoogleAuthButton";
 
 // Generated this test using GPT
+// Prompt: given [GoogleSignOn function], give me an appropriate test
+// to accurately test all functionality of the funcion
 describe("GoogleSignOn", () => {
 
     it("renders the Google button", () => {
